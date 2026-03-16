@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="colathech.secstools.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+</Solution>
