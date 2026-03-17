@@ -4,7 +4,11 @@
       :width="isCollapse ? '64px' : '240px'"
       class="bg-white border-r border-slate-200 transition-all duration-300 shadow-sm flex flex-col relative !overflow-visible z-20"
     >
-      <div class="h-14 flex items-center justify-center border-b border-slate-100 bg-white flex-shrink-0">
+      <div class="h-14 flex items-center border-b border-slate-100 bg-white flex-shrink-0 transition-all overflow-hidden" :class="isCollapse ? 'justify-center px-0' : 'justify-start px-4'">
+        <div class="w-8 h-8 rounded-md bg-blue-100/50 flex flex-shrink-0 items-center justify-center text-blue-600 transition-all">
+          <el-icon :size="18"><component :is="Icons.Grid" /></el-icon>
+        </div>
+        <span v-if="!isCollapse" class="ml-3 font-bold text-slate-800 flex-shrink-0 whitespace-nowrap text-base tracking-wide">SECS Tools</span>
       </div>
 
       <!-- 将搜索栏移出 el-menu，避免受到 el-menu 样式的污染 -->
@@ -78,12 +82,9 @@
     <el-container class="flex flex-col overflow-hidden bg-white">
       <el-header class="bg-white border-b border-slate-200 flex items-center px-6 h-14 z-10 sticky top-0">
         <div class="flex items-center w-full">
-          <div class="w-8 h-8 rounded-md bg-blue-100/50 flex flex-shrink-0 items-center justify-center mr-4 text-blue-600">
-            <el-icon :size="18"><component :is="Icons.Grid" /></el-icon>
-          </div>
           <el-breadcrumb separator="/">
-            <el-breadcrumb-item :to="{ path: '/' }" class="font-medium text-slate-800">SECS Tools</el-breadcrumb-item>
-            <el-breadcrumb-item v-if="currentRouteName !== 'Home'">{{ currentRouteName }}</el-breadcrumb-item>
+            <el-breadcrumb-item :to="{ path: '/' }" class="font-medium text-slate-800">主页</el-breadcrumb-item>
+            <el-breadcrumb-item v-if="currentRouteName && currentRouteName !== 'Home'">{{ currentRouteName }}</el-breadcrumb-item>
           </el-breadcrumb>
         </div>
       </el-header>
