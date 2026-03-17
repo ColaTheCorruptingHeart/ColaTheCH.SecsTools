@@ -128,7 +128,7 @@ function normalizeOpenLine(line: string) {
 
   const partMatch = cleaned.match(/^([A-Za-z0-9]+)(?:,\d+)?\s*(.*)$/)
   const type = partMatch ? partMatch[1] : cleaned
-  const value = partMatch ? partMatch[2].trim() : ''
+  const value = partMatch && partMatch[2] ? partMatch[2].trim() : ''
 
   return `<${type}${value ? ' ' + value : ''}${hasClose ? '>' : ''}`
 }
@@ -154,7 +154,7 @@ function parseSmlTree(rawText: string) {
   let hasTerminalDot = false
 
   for (let i = firstStructLine; i < lines.length; i += 1) {
-    const line = lines[i].trim()
+    const line = lines[i]?.trim() || ''
     if (!line) continue
 
     if (line.startsWith('<')) {

@@ -55,16 +55,6 @@
           </template>
         </el-menu-item>
 
-        <el-sub-menu index="favorites" v-if="favoriteTools.length > 0">
-          <template #title>
-            <el-icon><Clock /></el-icon>
-            <span class="font-medium text-[13.5px]">最近访问</span>
-          </template>
-          <el-menu-item v-for="tool in favoriteTools" :key="tool.id" :index="tool.path" class="text-[13px]">
-            {{ tool.name }}
-          </el-menu-item>
-        </el-sub-menu>
-
         <el-sub-menu v-for="category in toolsConfig" :key="category.id" :index="category.id">
           <template #title>
             <el-icon><component :is="Icons[category.icon as keyof typeof Icons] || Icons.Tools" /></el-icon>
@@ -74,13 +64,6 @@
             {{ tool.name }}
           </el-menu-item>
         </el-sub-menu>
-
-        <el-menu-item index="/settings">
-          <el-icon><Setting /></el-icon>
-          <template #title>
-            <span class="font-medium text-[13.5px]">管理账户</span>
-          </template>
-        </el-menu-item>
       </el-menu>
 
       <!-- 侧边栏折叠把手 -->
@@ -99,7 +82,7 @@
             <el-icon :size="18"><component :is="Icons.Grid" /></el-icon>
           </div>
           <el-breadcrumb separator="/">
-            <el-breadcrumb-item :to="{ path: '/' }" class="font-medium text-slate-800">IT Tools</el-breadcrumb-item>
+            <el-breadcrumb-item :to="{ path: '/' }" class="font-medium text-slate-800">SECS Tools</el-breadcrumb-item>
             <el-breadcrumb-item v-if="currentRouteName !== 'Home'">{{ currentRouteName }}</el-breadcrumb-item>
           </el-breadcrumb>
         </div>
@@ -119,10 +102,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Menu, Star, Search, HomeFilled, Clock, Setting } from '@element-plus/icons-vue'
+import { Search, HomeFilled } from '@element-plus/icons-vue'
 import * as Icons from '@element-plus/icons-vue'
 import { toolsConfig, flatTools } from '../config/tools'
-import { favoriteIds } from '../composables/useFavorites'
 
 const route = useRoute()
 const router = useRouter()
@@ -139,16 +121,12 @@ const currentRouteName = computed(() => {
   return route.meta.title || route.name || ''
 })
 
-const favoriteTools = computed(() => {
-  return flatTools.filter(t => favoriteIds.value.includes(t.id))
-})
-
 const searchResults = computed(() => {
   if (!searchQuery.value) return []
   const query = searchQuery.value.toLowerCase()
   return flatTools.filter(t =>
     t.name.toLowerCase().includes(query) ||
-    (t.description && t.description.toLowerCase().includes(query))
+    ((t as any).description && (t as any).description.toLowerCase().includes(query))
   )
 })
 
@@ -247,33 +225,57 @@ onUnmounted(() => {
 }
 
 /* 侧边栏折叠时的特殊样式处理，防止内容溢出或挤压 */
+.custom-menu.el-menu--collapse {
+  width: 100%;
+}
 .custom-menu.el-menu--collapse :deep(.el-menu-item) {
-  margin: 4px auto;
-  border-radius: 6px;
-  width: 40px;
+  margin: 12px auto !important;
+  border-radius: 8px !important;
+  width: 48px !important;
+  height: 48px !important;
+  line-height: 48px !important;
+  min-height: 48px !important;
   padding: 0 !important;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+}
+.custom-menu.el-menu--collapse :deep(.el-sub-menu) {
+  margin: 12px auto !important;
+  display: flex !important;
+  justify-content: center !important;
 }
 .custom-menu.el-menu--collapse :deep(.el-sub-menu__title) {
-  margin: 4px auto;
-  border-radius: 6px;
-  width: 40px;
+  margin: 0 !important;
+  border-radius: 8px !important;
+  width: 48px !important;
+  height: 48px !important;
+  line-height: 48px !important;
+  min-height: 48px !important;
   padding: 0 !important;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
 }
 .custom-menu.el-menu--collapse :deep(.el-tooltip__trigger) {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  height: 100%;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  width: 48px !important;
+  height: 48px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
 }
 .custom-menu.el-menu--collapse :deep(.el-icon) {
-  margin-right: 0;
+  margin: 0 !important;
+  width: auto !important;
+}
+/* 强制隐藏折叠时的右侧箭头与文字 */
+.custom-menu.el-menu--collapse :deep(.el-sub-menu__icon-arrow),
+.custom-menu.el-menu--collapse :deep(span) {
+  display: none !important;
 }
 
 /* 过渡动画 */
