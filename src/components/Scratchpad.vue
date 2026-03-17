@@ -31,8 +31,8 @@
       <div
         v-for="(block, index) in blocks"
         :key="block.id"
-        class="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mb-4 transition-all hover:border-indigo-300"
-      >
+        class="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mb-4 transition-all hover:border-indigo-300"        @keydown.ctrl.enter.prevent="addBlockAndFocus(index + 1)"
+        @keydown.meta.enter.prevent="addBlockAndFocus(index + 1)"      >
         <!-- Block Header -->
         <div class="flex items-center justify-between px-3 py-1.5 bg-slate-100/50 border-b border-slate-100 relative opacity-50 group-hover:opacity-100 transition-opacity">
           <div class="flex items-center gap-2">
@@ -48,10 +48,12 @@
               <el-option label="HTML" value="html" />
               <el-option label="CSS" value="css" />
               <el-option label="C++" value="cpp" />
+              <el-option label="C#" value="csharp" />
               <el-option label="Java" value="java" />
               <el-option label="Python" value="python" />
               <el-option label="Rust" value="rust" />
               <el-option label="SQL" value="sql" />
+              <el-option label="YAML" value="yaml" />
               <el-option label="XML" value="xml" />
               <el-option label="PHP" value="php" />
               <el-option label="Markdown" value="markdown" />
@@ -78,7 +80,7 @@
           :autofocus="true"
           :indent-with-tab="true"
           :tab-size="2"
-          :extensions="getExtensions(block.language, index)"
+          :extensions="getExtensions(block.language)"
           @change="saveState"
         />
       </div>
@@ -104,7 +106,10 @@ import { xml } from '@codemirror/lang-xml'
 import { php } from '@codemirror/lang-php'
 import { markdown } from '@codemirror/lang-markdown'
 import { vue } from '@codemirror/lang-vue'
-import { EditorView, keymap } from '@codemirror/view'
+import { EditorView } from '@codemirror/view'
+import { StreamLanguage } from '@codemirror/language'
+import { csharp } from '@codemirror/legacy-modes/mode/clike'
+import { yaml } from '@codemirror/legacy-modes/mode/yaml'
 
 const props = defineProps({
   isStandalone: {
@@ -151,16 +156,9 @@ const customTheme = EditorView.theme({
   }
 })
 
-const getExtensions = (lang: string, index: number) => {
+const getExtensions = (lang: string) => {
   const exts = [
-    customTheme,
-    keymap.of([{
-      key: 'Mod-Enter', // Mod means Ctrl on Windows/Linux, Cmd on Mac
-      run: () => {
-        addBlockAndFocus(index + 1)
-        return true
-      }
-    }])
+    customTheme
   ]
   switch (lang) {
     case 'json': exts.push(json()); break
@@ -168,10 +166,12 @@ const getExtensions = (lang: string, index: number) => {
     case 'html': exts.push(html()); break
     case 'css': exts.push(css()); break
     case 'cpp': exts.push(cpp()); break
+    case 'csharp': exts.push(StreamLanguage.define(csharp)); break
     case 'java': exts.push(java()); break
     case 'python': exts.push(python()); break
     case 'rust': exts.push(rust()); break
     case 'sql': exts.push(sql()); break
+    case 'yaml': exts.push(StreamLanguage.define(yaml)); break
     case 'xml': exts.push(xml()); break
     case 'php': exts.push(php()); break
     case 'markdown': exts.push(markdown()); break
