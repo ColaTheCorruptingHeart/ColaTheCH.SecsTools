@@ -39,15 +39,26 @@
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between shrink-0">
           <span class="text-sm font-medium text-slate-600">处理结果</span>
-          <div class="flex items-center gap-2" v-if="isValidObj && !isCompressed">
-            <span class="text-xs text-slate-500">展开层级:</span>
-            <el-select v-model="deep" size="small" style="width: 80px" @change="handleDeepChange">
-              <el-option label="1层" :value="1" />
-              <el-option label="2层" :value="2" />
-              <el-option label="3层" :value="3" />
-              <el-option label="4层" :value="4" />
-              <el-option label="全部" :value="999" />
-            </el-select>
+          <div class="flex items-center gap-2">
+            <el-button
+              v-if="resultJson && !hasError"
+              size="small"
+              plain
+              @click="copyResult"
+              title="一键复制格式化后的代码"
+            >
+              <el-icon class="mr-1"><DocumentCopy /></el-icon> 复制
+            </el-button>
+            <div class="flex items-center gap-2" v-if="isValidObj && !isCompressed">
+              <span class="text-xs text-slate-500">展开层级:</span>
+              <el-select v-model="deep" size="small" style="width: 80px" @change="handleDeepChange">
+                <el-option label="1层" :value="1" />
+                <el-option label="2层" :value="2" />
+                <el-option label="3层" :value="3" />
+                <el-option label="4层" :value="4" />
+                <el-option label="全部" :value="999" />
+              </el-select>
+            </div>
           </div>
         </div>
         <div class="flex-1 bg-slate-50/30 overflow-auto p-4 custom-scrollbar">
@@ -78,7 +89,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ScaleToOriginal } from '@element-plus/icons-vue'
+import { ScaleToOriginal, DocumentCopy } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import VueJsonPretty from 'vue-json-pretty'
 import 'vue-json-pretty/lib/styles.css'
@@ -139,6 +150,16 @@ const compressJson = () => {
   if (obj) {
     resultJson.value = JSON.stringify(obj)
     ElMessage.success('压缩完成')
+  }
+}
+
+const copyResult = async () => {
+  if (!resultJson.value) return
+  try {
+    await navigator.clipboard.writeText(resultJson.value)
+    ElMessage.success('已复制到剪贴板')
+  } catch (err) {
+    ElMessage.error('复制失败，请尝试手动复制')
   }
 }
 
