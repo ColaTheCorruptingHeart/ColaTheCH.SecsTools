@@ -1,13 +1,13 @@
 <template>
-  <div class="h-full flex flex-col gap-4">
+  <div :class="['h-full flex px-2 py-4', splitMode === 'horizontal' ? 'flex-row' : 'flex-col gap-2']">
     <!-- 上半部分：工具列表 -->
-    <div class="flex-1 overflow-y-auto px-2 py-4 custom-scrollbar">
+    <div class="flex-1 overflow-y-auto px-1 custom-scrollbar">
       <div class="mb-8" v-if="favoriteTools.length > 0">
         <h2 class="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 mb-4">
           <el-icon class="text-amber-500"><StarFilled /></el-icon>
           我的收藏
         </h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div class="tools-grid flex flex-wrap gap-6 xl:grid xl:grid-cols-4 lg:grid-cols-3 md:grid-cols-2">
           <div
             v-for="tool in favoriteTools"
             :key="`fav-${tool.id}`"
@@ -40,7 +40,7 @@
           </h2>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div class="tools-grid flex flex-wrap gap-6 xl:grid xl:grid-cols-4 lg:grid-cols-3 md:grid-cols-2">
           <div
             v-for="tool in category.tools"
             :key="tool.id"
@@ -70,16 +70,21 @@
 
     <!-- 拖拽调整区域条 -->
     <div
-      class="h-1.5 cursor-row-resize bg-slate-100 hover:bg-indigo-300 active:bg-indigo-400 transition-colors mx-2 rounded-full relative z-10"
+      :class="[
+        'transition-colors bg-slate-100 hover:bg-indigo-300 active:bg-indigo-400 rounded-full relative z-10 shrink-0',
+        splitMode === 'horizontal' ? 'w-1.5 cursor-col-resize mx-2 mt-2 mb-2' : 'h-1.5 cursor-row-resize my-1 mx-2'
+      ]"
       @mousedown="startDrag"
     ></div>
 
     <!-- 下半部分：随手记区块 -->
     <div
-      class="border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col bg-white"
-      :style="{ height: scratchpadHeight + '%', minHeight: '150px' }"
+      class="border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col bg-white shrink-0"
+      :style="splitMode === 'horizontal'
+        ? { width: scratchpadWidth + '%', minWidth: '300px' }
+        : { height: scratchpadHeight + '%', minHeight: '150px' }"
     >
-      <Scratchpad />
+      <Scratchpad :layout-mode="splitMode" @toggle-layout="toggleLayout" />
     </div>
   </div>
 </template>
@@ -103,39 +108,69 @@ const goToTool = (path: string) => {
   router.push(path)
 }
 
-// 随手记拖拽调整高度逻辑
-const scratchpadHeight = ref(45)
+// === 布局模式 (水平 / 垂直) ===
+const splitMode = ref<'horizontal' | 'vertical'>('vertical')
+
+const toggleLayout = () => {
+  splitMode.value = splitMode.value === 'vertical' ? 'horizontal' : 'vertical'
+}
+
+// === 拖拽调整大小逻辑 ===
+const scratchpadHeight = ref(45) // 仅当垂直时
+const scratchpadWidth = ref(40)  // 当水平时
 
 const startDrag = (e: MouseEvent) => {
   e.preventDefault()
-  const startY = e.clientY
-  const startHeight = scratchpadHeight.value
 
-  // 估算可用总高度，因为包含Header，粗略使用 window.innerHeight
-  const containerHeight = window.innerHeight - 60 // 减去大概的头部空间
+  if (splitMode.value === 'vertical') {
+    const startY = e.clientY
+    const startHeight = scratchpadHeight.value
+    const containerHeight = window.innerHeight - 60
 
-  const onMouseMove = (moveEvent: MouseEvent) => {
-    // moveEvent.clientY 越小，鼠标越往上，意味着底下区块变得越高
-    const deltaY = startY - moveEvent.clientY
-    const deltaPercent = (deltaY / containerHeight) * 100
-    let newHeight = startHeight + deltaPercent
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = startY - moveEvent.clientY
+      const deltaPercent = (deltaY / containerHeight) * 100
+      let newHeight = startHeight + deltaPercent
+      if (newHeight < 20) newHeight = 20
+      if (newHeight > 85) newHeight = 85
+      scratchpadHeight.value = newHeight
+    }
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+    }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'row-resize'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  } else {
+    // 水平拖拽逻辑
+    const startX = e.clientX
+    const startWidth = scratchpadWidth.value
+    const containerWidth = window.innerWidth - 64 // 减去左侧边栏等
 
-    // 设置边界（20% ~ 85%）
-    if (newHeight < 20) newHeight = 20
-    if (newHeight > 85) newHeight = 85
-
-    scratchpadHeight.value = newHeight
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      // 鼠标向左移动 (moveEvent.clientX 变小)，左侧变小，右区变大。
+      const deltaX = startX - moveEvent.clientX
+      const deltaPercent = (deltaX / containerWidth) * 100
+      let newWidth = startWidth + deltaPercent
+      if (newWidth < 20) newWidth = 20
+      if (newWidth > 85) newWidth = 85
+      scratchpadWidth.value = newWidth
+    }
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+    }
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
   }
-
-  const onMouseUp = () => {
-    document.removeEventListener('mousemove', onMouseMove)
-    document.removeEventListener('mouseup', onMouseUp)
-    document.body.style.userSelect = '' // 恢复文本选择
-  }
-
-  document.body.style.userSelect = 'none' // 防止拖拽时选中文字
-  document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mouseup', onMouseUp)
 }
 </script>
 
@@ -153,5 +188,11 @@ const startDrag = (e: MouseEvent) => {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: rgba(148, 163, 184, 0.6);
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
 }
 </style>

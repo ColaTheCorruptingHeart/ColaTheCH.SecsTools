@@ -13,6 +13,11 @@
         <el-button size="small" type="danger" plain @click="clearAll" v-if="blocks.length > 0">
           清空
         </el-button>
+        <el-tooltip v-if="!isStandalone" :content="layoutMode === 'vertical' ? '切换为左右布局' : '切换为上下布局'" placement="top" :show-after="500">
+          <el-button size="small" plain @click="$emit('toggle-layout')">
+            <el-icon><component :is="layoutMode === 'vertical' ? 'Right' : 'Bottom'" /></el-icon>
+          </el-button>
+        </el-tooltip>
         <el-tooltip v-if="!isStandalone" content="进入全屏独立页" placement="top" :show-after="500">
           <el-button size="small" plain @click="goFullscreen">
             <el-icon><FullScreen /></el-icon>
@@ -91,7 +96,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { DocumentAdd, Plus, Top, Delete, EditPen, FullScreen } from '@element-plus/icons-vue'
+import { DocumentAdd, Plus, Top, Delete, EditPen, FullScreen, Bottom, Right } from '@element-plus/icons-vue'
 import { Codemirror } from 'vue-codemirror'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
@@ -115,8 +120,14 @@ const props = defineProps({
   isStandalone: {
     type: Boolean,
     default: false
+  },
+  layoutMode: {
+    type: String,
+    default: 'vertical'
   }
 })
+
+const emit = defineEmits(['toggle-layout'])
 
 const router = useRouter()
 
