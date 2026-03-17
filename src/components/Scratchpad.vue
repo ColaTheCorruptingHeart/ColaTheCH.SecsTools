@@ -15,7 +15,7 @@
         </el-button>
         <el-tooltip v-if="!isStandalone" :content="layoutMode === 'vertical' ? '切换为左右布局' : '切换为上下布局'" placement="top" :show-after="500">
           <el-button size="small" plain @click="$emit('toggle-layout')">
-            <el-icon><component :is="layoutMode === 'vertical' ? 'Right' : 'Bottom'" /></el-icon>
+            <el-icon><component :is="layoutMode === 'vertical' ? Right : Bottom" /></el-icon>
           </el-button>
         </el-tooltip>
         <el-tooltip v-if="!isStandalone" content="进入全屏独立页" placement="top" :show-after="500">
@@ -36,11 +36,30 @@
       <div
         v-for="(block, index) in blocks"
         :key="block.id"
-        class="group bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mb-4 transition-all hover:border-indigo-300"        @keydown.ctrl.enter.prevent="addBlockAndFocus(index + 1)"
-        @keydown.meta.enter.prevent="addBlockAndFocus(index + 1)"      >
+        class="group bg-white rounded-lg border shadow-sm overflow-hidden mb-4 transition-all"
+        :class="[
+          draggingIndex === index ? 'opacity-40 border-indigo-400 scale-[0.98]' : 'border-slate-200 hover:border-indigo-300'
+        ]"
+        :draggable="dragEnabledIndex === index"
+        @dragstart="onDragStart($event, index)"
+        @dragenter.prevent="onDragEnter($event, index)"
+        @dragover.prevent
+        @dragend="onDragEnd"
+        @drop.prevent
+        @keydown.ctrl.enter.prevent="addBlockAndFocus(index + 1)"
+        @keydown.meta.enter.prevent="addBlockAndFocus(index + 1)"
+      >
         <!-- Block Header -->
         <div class="flex items-center justify-between px-3 py-1.5 bg-slate-100/50 border-b border-slate-100 relative opacity-50 group-hover:opacity-100 transition-opacity">
           <div class="flex items-center gap-2">
+            <div
+              class="cursor-move p-1 -ml-1 text-slate-400 hover:text-slate-600 rounded hover:bg-slate-200 transition-colors flex items-center justify-center"
+              @mouseenter="dragEnabledIndex = index"
+              @mouseleave="dragEnabledIndex = null"
+              title="按住拖动以调整顺序"
+            >
+              <el-icon><Rank /></el-icon>
+            </div>
             <el-select
               v-model="block.language"
               size="small"
@@ -96,7 +115,7 @@
 <script setup lang="ts">
 import { ref, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { DocumentAdd, Plus, Top, Delete, EditPen, FullScreen, Bottom, Right } from '@element-plus/icons-vue'
+import { DocumentAdd, Plus, Top, Delete, EditPen, FullScreen, Bottom, Right, Rank } from '@element-plus/icons-vue'
 import { Codemirror } from 'vue-codemirror'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
@@ -140,6 +159,36 @@ interface NoteBlock {
 const STORAGE_KEY = 'secstools_scratchpad_blocks'
 
 const blocks = ref<NoteBlock[]>([])
+
+// Drag and drop state
+const dragEnabledIndex = ref<number | null>(null)
+const draggingIndex = ref<number | null>(null)
+
+const onDragStart = (e: DragEvent, index: number) => {
+  draggingIndex.value = index
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', index.toString())
+  }
+}
+
+const onDragEnter = (e: DragEvent, index: number) => {
+  if (draggingIndex.value !== null && draggingIndex.value !== index) {
+    const items = [...blocks.value]
+    const [moved] = items.splice(draggingIndex.value, 1)
+    if (moved) {
+      items.splice(index, 0, moved)
+      blocks.value = items
+      draggingIndex.value = index
+      saveState()
+    }
+  }
+}
+
+const onDragEnd = () => {
+  draggingIndex.value = null
+  dragEnabledIndex.value = null
+}
 
 // Basic CodeMirror theme to look clean and neat
 const customTheme = EditorView.theme({
