@@ -49,13 +49,13 @@ export const toolsConfig: ToolCategory[] = [
         componentPath: 'Base64'
       },
       {
-        id: 'regex',
-        name: '正则表达式测试',
-        desc: '在线校验正则表达式匹配情况，包含常用正则参考。',
-        path: '/tools/regex',
-        icon: 'Help',
-        color: '#f59e0b', // amber-500
-        componentPath: 'Regex'
+        id: 'scratchpad',
+        name: '随手记',
+        desc: '支持自动分块、高亮渲染的沉浸式文本便签。',
+        path: '/tools/scratchpad',
+        icon: 'EditPen',
+        color: '#6366f1', // indigo-500
+        componentPath: 'ScratchpadView'
       }
     ]
   }
