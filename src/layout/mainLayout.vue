@@ -55,7 +55,7 @@
         <el-menu-item index="/">
           <el-icon><HomeFilled /></el-icon>
           <template #title>
-            <span class="font-medium text-[13.5px]">账户主页</span>
+            <span class="font-medium text-[13.5px]">主页</span>
           </template>
         </el-menu-item>
 
