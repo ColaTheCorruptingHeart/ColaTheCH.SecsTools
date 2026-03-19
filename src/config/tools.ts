@@ -40,15 +40,6 @@ export const toolsConfig: ToolCategory[] = [
         componentPath: 'SecsSmlFormatter'
       },
       {
-        id: 'base64',
-        name: 'Base64 编码/解码',
-        desc: '在线进行字符串及文件的 Base64 编码、解码操作。',
-        path: '/tools/base64',
-        icon: 'Document',
-        color: '#3b82f6', // blue-500
-        componentPath: 'Base64'
-      },
-      {
         id: 'scratchpad',
         name: '随手记',
         desc: '支持自动分块、高亮渲染的沉浸式文本便签。',
@@ -56,6 +47,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'EditPen',
         color: '#6366f1', // indigo-500
         componentPath: 'ScratchpadView'
+      },
+      {
+        id: 'base-converter',
+        name: '进制转换',
+        desc: '支持同转多个数据，在线进制相互转化，并带有历史记录。',
+        path: '/tools/base-converter',
+        icon: 'Switch',
+        color: '#ec4899', // pink-500
+        componentPath: 'BaseConverter'
       }
     ]
   }

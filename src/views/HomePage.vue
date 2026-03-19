@@ -158,7 +158,7 @@ watch(searchEngine, (newVal) => {
 })
 
 // === 布局模式 (水平 / 垂直) ===
-const splitMode = ref<'horizontal' | 'vertical'>('vertical')
+const splitMode = ref<'horizontal' | 'vertical'>('horizontal')
 
 const toggleLayout = () => {
   splitMode.value = splitMode.value === 'vertical' ? 'horizontal' : 'vertical'
