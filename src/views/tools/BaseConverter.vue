@@ -134,7 +134,9 @@ const handleConvert = () => {
   const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
 
   for (let i = 0; i < rawInputs.length; i++) {
-    const rawStr = rawInputs[i].trim()
+    const rawInput = rawInputs[i]
+    if (!rawInput) continue
+    const rawStr = rawInput.trim()
     if (!rawStr) continue // Skip empty strings like "10, , 20"
 
     // Parse logic
