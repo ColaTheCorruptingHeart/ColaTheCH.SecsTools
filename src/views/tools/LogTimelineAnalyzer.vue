@@ -9,7 +9,7 @@
                </div>
                <div>
                    <h2 class="text-lg font-semibold text-slate-800 dark:text-gray-100 m-0">日志时间线分析</h2>
-                   <p class="text-xs text-slate-500 dark:text-gray-400 m-0 mt-0.5">解析大型SECS日志，提取并在时间线呈现关键CEID与事件。</p>
+                   <p class="text-xs text-slate-500 dark:text-gray-400 m-0 mt-0.5">SECS日志解析，提取并在时间线呈现关键CEID与事件。</p>
                </div>
            </div>
            <div class="flex items-center gap-2">
@@ -22,18 +22,66 @@
     <!-- Main Content -->
     <div class="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
       <!-- Left: Rules -->
-      <div class="lg:w-64 xl:w-72 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-64 lg:h-full">
-         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 font-medium text-sm flex justify-between items-center text-slate-600 dark:text-slate-300">
-             <span>匹配规则 (CEID=描述)</span>
-             <el-button size="small" type="primary" plain @click="applyRulesAndParse" :disabled="!logContent">重新分析</el-button>
+      <div class="lg:w-64 xl:w-72 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-[500px] lg:h-full overflow-hidden">
+         <!-- CEID Rules -->
+         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 font-medium text-sm flex justify-between items-center text-slate-600 dark:text-slate-300 flex-none">
+             <span>CEID匹配规则</span>
+             <el-button size="small" type="primary" plain @click="importDialogVisible = true">导入</el-button>
          </div>
-         <el-input
-           v-model="rulesText"
-           type="textarea"
-           class="flex-1 custom-textarea"
-           :input-style="{ height: '100%', resize: 'none', border: 'none', boxShadow: 'none' }"
-           placeholder="2300=MappingEnd&#10;700=PrJobCreated"
-         />
+         <div class="flex-1 overflow-auto p-2 custom-scrollbar border-b border-slate-200 dark:border-slate-700 min-h-0">
+             <div v-if="rulesList.length > 0" class="flex flex-col gap-2">
+                 <div v-for="(rule, index) in rulesList" :key="index" class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded border border-slate-200 dark:border-slate-700 transition-opacity" :class="{ 'opacity-40': rule.enabled === false }">
+                     <el-checkbox v-model="rule.enabled" size="small" @change="applyRulesAndParse" style="margin-right: 0;" />
+                     <el-color-picker v-model="rule.color" size="small" @change="updateHighlights" :disabled="rule.enabled === false" :predefine="predefineColors" />
+                     <div class="flex-1 min-w-0 flex items-baseline gap-1.5 overflow-hidden">
+                         <div class="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-200 shrink-0">{{ rule.ceid }}</div>
+                         <div class="text-[10px] text-slate-500 dark:text-slate-400 truncate" :title="rule.desc">{{ rule.desc }}</div>
+                     </div>
+                     <el-button type="danger" link @click="removeRule(index)" class="!p-1">
+                         <el-icon><Delete /></el-icon>
+                     </el-button>
+                 </div>
+             </div>
+             <el-empty v-else description="暂无规则" :image-size="40" />
+         </div>
+
+         <!-- SxFy Rules -->
+         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 font-medium text-sm flex justify-between items-center text-slate-600 dark:text-slate-300 flex-none">
+             <span>SxFy匹配规则</span>
+             <el-button size="small" type="primary" plain @click="openSxFyDialog()">添加</el-button>
+         </div>
+         <div class="flex-1 overflow-auto p-2 custom-scrollbar min-h-0">
+             <div v-if="sxfyList.length > 0" class="flex flex-col gap-2">
+                 <div v-for="(rule, index) in sxfyList" :key="rule.id" class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded border border-slate-200 dark:border-slate-700 transition-opacity" :class="{ 'opacity-40': rule.enabled === false }">
+                     <el-checkbox v-model="rule.enabled" size="small" @change="applyRulesAndParse" style="margin-right: 0;" />
+                     <el-color-picker v-model="rule.color" size="small" @change="updateHighlights" :disabled="rule.enabled === false" :predefine="predefineColors" />
+                     <div class="flex-1 min-w-0 flex flex-col justify-center overflow-hidden">
+                         <div class="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-200 shrink-0">S{{ rule.s }}F{{ rule.f }}</div>
+                         <div class="text-[9px] text-slate-500 dark:text-slate-400 truncate" :title="rule.keyPos ? `位置: ${rule.keyPos}` : '任意位置'">{{ rule.keyPos ? `[Pos: ${rule.keyPos}]` : '' }} {{ rule.desc }}</div>
+                     </div>
+                     <el-button type="primary" link @click="openSxFyDialog(rule)" class="!p-1">
+                         <el-icon><Edit /></el-icon>
+                     </el-button>
+                     <el-button type="danger" link @click="removeSxFyRule(index)" class="!p-1">
+                         <el-icon><Delete /></el-icon>
+                     </el-button>
+                 </div>
+             </div>
+             <el-empty v-else description="暂无SxFy规则" :image-size="40" />
+         </div>
+         
+         <!-- Action -->
+         <div class="p-2 border-t border-slate-200 dark:border-slate-700 flex-none flex flex-col gap-2 bg-slate-50 dark:bg-slate-900/50">
+            <div class="flex gap-2">
+                <el-button class="flex-1 !ml-0" size="small" @click="triggerJsonImport">导入规则</el-button>
+                <el-button class="flex-1 !ml-0" size="small" @click="exportJsonConfig">导出规则</el-button>
+            </div>
+            <div class="flex gap-2">
+                <el-button class="flex-1 !ml-0" size="small" type="danger" plain @click="clearAllData">清空数据</el-button>
+                <el-button class="flex-1 !ml-0" size="small" type="primary" @click="applyRulesAndParse" :disabled="!logContent">重新分析</el-button>
+            </div>
+            <input type="file" ref="jsonFileInput" class="hidden" accept=".json" @change="onJsonFileSelected" />
+         </div>
       </div>
 
       <!-- Middle: CodeMirror Log Viewer -->
@@ -55,14 +103,14 @@
             <!-- Custom Scrollbar Highlights Container -->
             <div 
               v-if="logContent !== null && timelineData.length > 0 && viewRef"
-              class="absolute right-0 top-0 w-[14px] pointer-events-none z-10 opacity-85 group-hover:opacity-100 transition-opacity"
+              class="absolute right-0 top-0 w-[14px] pointer-events-none z-10 opacity-100 transition-opacity"
               :style="{ bottom: scrollInfo.bottomOffset + 'px' }"
             >
               <div 
                 v-for="(item, index) in timelineData" 
                 :key="'mark-'+index"
-                class="absolute right-[2px] w-[10px] h-[3px] rounded-[1px] opacity-90 z-20 transition-all hover:scale-110"
-                :style="{ top: getScrollMarkerTop(item.line), backgroundColor: getMarkerColor(item.ceid) }"
+                class="absolute right-[2px] w-[10px] h-[3px] rounded-[1px] opacity-40 group-hover:opacity-60 z-20 transition-all hover:scale-110"
+                :style="{ top: getScrollMarkerTop(item.line), backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
               ></div>
             </div>
          </div>
@@ -80,19 +128,19 @@
                      v-for="(item, index) in timelineData"
                      :key="index"
                      class="cursor-pointer border-l-[3px] p-2 rounded-r transition-colors group flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                     :style="{ borderLeftColor: getMarkerColor(item.ceid) }"
+                     :style="{ borderLeftColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
                      @click="jumpToLine(item.line)"
                  >
                      <div class="flex justify-between items-center gap-2">
-                         <span class="text-[11px] text-slate-400 font-mono tracking-tight shrink-0">{{ item.time }}</span>
+                         <span class="text-[11px] text-slate-600 font-mono tracking-tight shrink-0">{{ item.time }}</span>
                          <span 
                             class="text-[10px] px-1.5 py-0.5 rounded font-mono truncate border"
                             :style="{ 
-                              color: getMarkerColor(item.ceid),
-                              backgroundColor: getMarkerColor(item.ceid) + '20',
-                              borderColor: getMarkerColor(item.ceid) + '40'
+                              color: getMarkerColor(item.ceid, item.type, item.ruleId),
+                              backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '20',
+                              borderColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '40'
                             }"
-                         >CEID: {{ item.ceid }}</span>
+                         >{{ item.type === 'CEID' ? 'CEID' : 'SxFy' }}: {{ item.ceid }}</span>
                      </div>
                      <div class="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:opacity-80 leading-tight">
                          {{ item.desc }}
@@ -103,56 +151,96 @@
          </div>
       </div>
     </div>
+
+    <!-- Rule Import Dialog -->
+    <el-dialog v-model="importDialogVisible" title="导入 CEID 匹配规则" width="500px">
+      <div class="mb-2 text-sm text-slate-500">
+        请输入或粘贴 CEID 对应规则，格式为 每行：<code>CEID=描述</code> 
+        <el-button type="primary" link icon="Document" size="small" @click="triggerRuleImport" class="ml-2">从文件导入</el-button>
+        <input type="file" ref="ruleFileInput" class="hidden" accept=".txt,.log,.csv" @change="onRuleFileSelected" />
+      </div>
+      <el-input
+        v-model="importText"
+        type="textarea"
+        :rows="8"
+        placeholder="例如：\n2300=MappingEnd\n700=PrJobCreated"
+      />
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="importDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="confirmImport">确定导入</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- SxFy Import Dialog -->
+    <el-dialog v-model="sxfyDialogVisible" :title="isSxFyEdit ? '编辑 SxFy 规则' : '添加 SxFy 规则'" width="450px" destroy-on-close>
+      <el-form :model="sxfyForm" label-width="110px" size="default">
+        <el-form-item label="Stream (S)">
+          <el-input-number v-model="sxfyForm.s" :min="1" :max="99" />
+        </el-form-item>
+        <el-form-item label="Function (F)">
+          <el-input-number v-model="sxfyForm.f" :min="0" :max="99" />
+        </el-form-item>
+        <el-form-item label="关键值位置">
+          <el-input v-model="sxfyForm.keyPos" placeholder="可选，如 [0][1]" />
+        </el-form-item>
+        <el-form-item label="自定义描述">
+          <el-input v-model="sxfyForm.desc" placeholder="为空时自动生成" />
+        </el-form-item>
+        <el-form-item label="标记颜色">
+          <el-color-picker v-model="sxfyForm.color" :predefine="predefineColors" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="sxfyDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveSxFyRule">确定</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, shallowRef } from 'vue'
-import { Calendar } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Calendar, Delete, Document, Edit } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Codemirror } from 'vue-codemirror'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState } from '@codemirror/state'
 
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const ruleFileInput = ref<HTMLInputElement | null>(null)
+const jsonFileInput = ref<HTMLInputElement | null>(null)
 
-const rulesText = ref(`2300=MappingEnd
-700=PrJobCreated
-301=AGVPPSelected
-702=AGVPrJobStarted
-800=AGVWaferProcessingStrated
-801=AGVWaferEndProcessing
-802=AGVWaferIncompleteEnd
-805=AGVWaferUnProcessEnd
-806=AGVWaferLostEnd
-708=AGVPrJobEnded
-4368=StepLotStart
-4369=StepLotEnd
-16777492=AGVPortSensorONLOC1
-16777493=AGVPortSensorOFFLOC1
-16777748=AGVPortSensorONLOC2
-16777749=AGVPortSensorOFFLOC2
-16778004=AGVPortSensorONLOC3
-16778005=AGVPortSensorOFFLOC3
-100=AGVControlStateOFFLINE
-101=AGVControlStateLOCAL
-102=AGVControlStateREMOTE
-78=HostMonitoring
-79=HostControl
-80=DualControl
-2002=StepperInline
-2003=StepperLocal`)
+const importDialogVisible = ref(false)
+const importText = ref('')
 
-const logContent = ref<string | null>(null)
-const timelineData = ref<{time: string, ceid: string, desc: string, line: number}[]>([])
-const editorTotalLines = ref(1)
-const scrollInfo = ref({ bottomOffset: 0 })
+interface RuleItem {
+  ceid: string
+  desc: string
+  color: string
+  enabled?: boolean
+}
 
-const viewRef = shallowRef<EditorView>()
+interface SxFyRuleItem {
+  id: string
+  s: number
+  f: number
+  color: string
+  enabled?: boolean
+  keyPos?: string
+  desc?: string
+}
 
-// Pre-defined palette for different CEIDs to ensure consistent and color-coded mapping
-const colorPalette = [
+const rulesList = ref<RuleItem[]>([])
+const sxfyList = ref<SxFyRuleItem[]>([
+  { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true }
+])
+
+const predefineColors = ref([
   '#3b82f6', // blue
   '#ef4444', // red
   '#10b981', // emerald
@@ -163,18 +251,159 @@ const colorPalette = [
   '#84cc16', // teal
   '#f97316', // orange
   '#6366f1'  // indigo
-]
+])
 
-// Assigns a consistent color to a specific CEID
-const ceidColorCache = new Map<string, string>()
-let colorIndex = 0
+const logContent = ref<string | null>(null)
+const timelineData = ref<{time: string, ceid: string, ruleId?: string, desc: string, line: number, type?: 'CEID' | 'SxFy'}[]>([])
+const editorTotalLines = ref(1)
+const scrollInfo = ref({ bottomOffset: 0 })
 
-const getMarkerColor = (ceid: string) => {
-  if (!ceidColorCache.has(ceid)) {
-    ceidColorCache.set(ceid, colorPalette[colorIndex % colorPalette.length])
-    colorIndex++
+const viewRef = shallowRef<EditorView>()
+
+const getMarkerColor = (id: string, type: 'CEID' | 'SxFy' = 'CEID', ruleId?: string) => {
+  if (type === 'SxFy') {
+    const rule = sxfyList.value.find(r => r.id === ruleId) || sxfyList.value.find(r => `S${r.s}F${r.f}` === id || id.startsWith(`S${r.s}F${r.f}`))
+    return rule ? rule.color : '#10b981'
   }
-  return ceidColorCache.get(ceid)!
+  const rule = rulesList.value.find(r => r.ceid === id)
+  return rule ? rule.color : '#3b82f6'
+}
+
+const triggerRuleImport = () => {
+  ruleFileInput.value?.click()
+}
+
+const parseImportText = (text: string) => {
+  const newRules: RuleItem[] = []
+  text.split('\n').forEach(line => {
+    const parts = line.split('=')
+    if (parts.length === 2 && parts[0].trim() !== '') {
+      const ceid = parts[0].trim()
+      const desc = parts[1].trim()
+      const existing = newRules.find(r => r.ceid === ceid)
+      if (!existing) {
+        newRules.push({
+          ceid,
+          desc,
+          color: '#3b82f6',
+          enabled: true
+        })
+      } else if (existing.desc !== desc) {
+        ElMessage.warning(`发现相同 CEID(${ceid}) 但描述不同的条目，已跳过新条目: ${desc}`)
+      }
+    }
+  })
+  return newRules
+}
+
+const onRuleFileSelected = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+
+  try {
+    const text = await file.text()
+    importText.value = text
+  } catch (err: any) {
+    ElMessage.error('读取规则文件失败: ' + err.message)
+  }
+  
+  if (ruleFileInput.value) {
+    ruleFileInput.value.value = ''
+  }
+}
+
+const confirmImport = () => {
+  const newRules = parseImportText(importText.value)
+  let added = 0
+  newRules.forEach(nr => {
+    const existing = rulesList.value.find(r => r.ceid === nr.ceid)
+    if (!existing) {
+      rulesList.value.push(nr)
+      added++
+    } else if (existing.desc !== nr.desc) {
+      ElMessage.warning(`无法导入 CEID(${nr.ceid})：规则已存在且描述冲突 -> 原:${existing.desc} / 新:${nr.desc}`)
+    }
+  })
+  ElMessage.success(`成功导入 ${added} 条新规则`)
+  importDialogVisible.value = false
+  importText.value = ''
+  
+  if (logContent.value) {
+    applyRulesAndParse()
+  }
+}
+
+const removeRule = (index: number) => {
+  rulesList.value.splice(index, 1)
+  if (logContent.value) {
+      applyRulesAndParse()
+  } else {
+      updateHighlights()
+  }
+}
+
+const sxfyDialogVisible = ref(false)
+const isSxFyEdit = ref(false)
+const sxfyForm = ref<SxFyRuleItem>({ id: '', s: 1, f: 1, color: '#10b981', enabled: true, keyPos: '', desc: '' })
+
+const openSxFyDialog = (rule?: SxFyRuleItem) => {
+    if (rule) {
+        isSxFyEdit.value = true
+        sxfyForm.value = { ...rule }
+    } else {
+        isSxFyEdit.value = false
+        sxfyForm.value = { 
+            id: Date.now().toString() + Math.random().toString().slice(2,5), 
+            s: 1, 
+            f: 1, 
+            color: predefineColors.value[sxfyList.value.length % predefineColors.value.length], 
+            enabled: true, 
+            keyPos: '', 
+            desc: '' 
+        }
+    }
+    sxfyDialogVisible.value = true
+}
+
+const saveSxFyRule = () => {
+    if (sxfyForm.value.keyPos) sxfyForm.value.keyPos = sxfyForm.value.keyPos.trim()
+    
+    // Conflict Check
+    const exists = sxfyList.value.find(r => r.s === sxfyForm.value.s && r.f === sxfyForm.value.f && r.keyPos === sxfyForm.value.keyPos && r.id !== sxfyForm.value.id)
+    if (exists) {
+        ElMessage.warning('该 SxFy 规则及对应关键值位置已存在，请勿重复添加')
+        return
+    }
+
+    if (isSxFyEdit.value) {
+        const idx = sxfyList.value.findIndex(r => r.id === sxfyForm.value.id)
+        if (idx !== -1) {
+            sxfyList.value.splice(idx, 1, { ...sxfyForm.value })
+        }
+    } else {
+        sxfyList.value.push({ ...sxfyForm.value })
+    }
+    sxfyDialogVisible.value = false
+    if (logContent.value) {
+        applyRulesAndParse()
+    }
+}
+
+const removeSxFyRule = (index: number) => {
+  sxfyList.value.splice(index, 1)
+  if (logContent.value) {
+      applyRulesAndParse()
+  } else {
+      updateHighlights()
+  }
+}
+
+const updateHighlights = () => {
+  if (!viewRef.value || timelineData.value.length === 0) return
+  const doc = viewRef.value.state.doc
+  viewRef.value.dispatch({
+    effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(timelineData.value, doc)))
+  })
 }
 
 // Scrollbar calculations
@@ -211,7 +440,7 @@ const getHighlightExtension = (timeline: typeof timelineData.value, doc: any) =>
   timeline.forEach(item => {
     if (item.line <= doc.lines) {
       const lineData = doc.line(item.line)
-      const color = getMarkerColor(item.ceid)
+      const color = getMarkerColor(item.ceid, item.type, item.ruleId)
       
       const LineHighlight = Decoration.line({
         attributes: { style: `background-color: ${color}25 !important` } // 25 is hex for slight transparency
@@ -289,6 +518,63 @@ const onFileSelected = async (e: Event) => {
   }, 50)
 }
 
+const triggerJsonImport = () => {
+  jsonFileInput.value?.click()
+}
+
+const onJsonFileSelected = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    if (data.ceidRules) rulesList.value = data.ceidRules
+    if (data.sxfyRules) sxfyList.value = data.sxfyRules
+    ElMessage.success('配置导入成功')
+    if (logContent.value) applyRulesAndParse()
+  } catch (err: any) {
+    ElMessage.error('读取配置文件失败: ' + err.message)
+  }
+  if (jsonFileInput.value) jsonFileInput.value.value = ''
+}
+
+const exportJsonConfig = () => {
+  const data = {
+    ceidRules: rulesList.value,
+    sxfyRules: sxfyList.value
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'secs-log-rules.json'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+  ElMessage.success('配置导出成功')
+}
+
+const clearAllData = () => {
+  ElMessageBox.confirm('确定要清空所有规则和日志数据吗？', '警告', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    rulesList.value = []
+    sxfyList.value = []
+    logContent.value = null
+    timelineData.value = []
+    if (fileInput.value) fileInput.value.value = ''
+    if (viewRef.value) {
+      viewRef.value.dispatch({
+        effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
+      })
+    }
+    ElMessage.success('已清空所有数据')
+  }).catch(() => {})
+}
+
 const applyRulesAndParse = () => {
   if (!logContent.value) return
   loading.value = true
@@ -296,11 +582,10 @@ const applyRulesAndParse = () => {
   setTimeout(() => {
     try {
       const ruleMap = new Map<string, string>()
-      rulesText.value.split('\n').forEach(line => {
-        const parts = line.split('=')
-        if (parts.length === 2 && parts[0].trim() !== '') {
-          ruleMap.set(parts[0].trim(), parts[1].trim())
-        }
+      rulesList.value.forEach(rule => {
+          if (rule.enabled !== false) {
+              ruleMap.set(rule.ceid, rule.desc)
+          }
       })
 
       const lines = logContent.value.split('\n')
@@ -308,57 +593,125 @@ const applyRulesAndParse = () => {
       
       let s6f11BlockLine = -1
       let s6f11Time = ''
-      let listDepth = 0
-      let elementIndexAtDepth1 = -1
+      let currentPath: number[] = []
+      
+      let activeSxFyRules: SxFyRuleItem[] = []
+      let sxFyBlockTime = ''
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]
         
-        // Match start of S6F11
-        const headerMatch = line.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+S6F11/i)
+        // Match start of any SECS message header
+        const headerMatch = line.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S(\d+)F(\d+))/i)
         if (headerMatch) {
-          s6f11BlockLine = i + 1
-          s6f11Time = headerMatch[1]
-          listDepth = 0
-          elementIndexAtDepth1 = -1
+          const time = headerMatch[1]
+          const sfName = headerMatch[2].toUpperCase() // "S6F11"
+
+          // If there's an ongoing block, reset
+          currentPath = []
+          
+          activeSxFyRules = sxfyList.value.filter(r => r.enabled !== false && `S${r.s}F${r.f}` === sfName)
+          
+          if (sfName === 'S6F11') {
+            s6f11BlockLine = i + 1
+            s6f11Time = time
+          } else {
+            s6f11BlockLine = -1
+          }
+
+          if (activeSxFyRules.length > 0) {
+            sxFyBlockTime = time
+            activeSxFyRules.forEach(rule => {
+                if (!rule.keyPos) {
+                    timeline.push({
+                        time: time,
+                        ceid: sfName,
+                        ruleId: rule.id,
+                        type: 'SxFy',
+                        desc: rule.desc || `匹配到 ${sfName} 消息`,
+                        line: i + 1
+                    })
+                }
+            })
+          }
           continue
         }
 
-        if (s6f11BlockLine !== -1) {
+        if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
           const lineTrim = line.trim()
           
           // Check if another message header unexpectedly started
           if (lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)/)) {
             s6f11BlockLine = -1
+            activeSxFyRules = []
             i-- // Re-evaluate this line in the next iteration
             continue
           }
 
           if (lineTrim.startsWith('<L')) {
-            if (listDepth === 1) elementIndexAtDepth1++
-            listDepth++
+            if (currentPath.length === 0) {
+                currentPath.push(0)
+            } else {
+                currentPath[currentPath.length - 1]++
+            }
+            currentPath.push(-1)
           } else if (lineTrim.startsWith('>')) {
-            listDepth--
-            if (listDepth <= 0) s6f11BlockLine = -1
-          } else if (lineTrim.startsWith('<')) {
-            if (listDepth === 1) {
-              elementIndexAtDepth1++
-              if (elementIndexAtDepth1 === 1) { // Reached [0][1] relative to the parent <L
-                const valMatch = lineTrim.match(/'([^']+)'/)
-                if (valMatch) {
-                  const ceidStr = valMatch[1].trim()
-                  if (ruleMap.has(ceidStr)) {
-                    timeline.push({
-                      time: s6f11Time,
-                      ceid: ceidStr,
-                      desc: ruleMap.get(ceidStr)!,
-                      line: i + 1 // The specific line the CEID is at
-                    })
-                  }
-                }
-                // Once we checked the CEID, we stop searching this block 
+            currentPath.pop()
+            if (currentPath.length <= 1) {
                 s6f11BlockLine = -1
-              }
+                activeSxFyRules = []
+                currentPath = []
+            }
+          } else if (lineTrim.startsWith('<')) {
+            // Note: Data item
+            if (currentPath.length === 0) {
+                currentPath.push(0)
+            } else {
+                currentPath[currentPath.length - 1]++
+            }
+            const currentPathStr = '[' + currentPath.join('][') + ']'
+            
+            // Reusable value extractor
+            let valStr = ''
+            const qsMatch = lineTrim.match(/['"](.*?)['"]/);
+            if (qsMatch) {
+                valStr = qsMatch[1]
+            } else {
+                const typeMatcher = lineTrim.match(/<[^>\s]+\s+(?:\[.*?\]\s+)?(.*?)>/)
+                if (typeMatcher) {
+                    valStr = typeMatcher[1].trim()
+                } else {
+                     valStr = lineTrim.replace(/<|>/g, '').trim()
+                }
+            }
+
+            // CEID S6F11 Check
+            if (s6f11BlockLine !== -1 && currentPathStr === '[0][1]') {
+                if (ruleMap.has(valStr)) {
+                    timeline.push({
+                        time: s6f11Time,
+                        ceid: valStr,
+                        type: 'CEID',
+                        desc: ruleMap.get(valStr)!,
+                        line: i + 1 
+                    })
+                }
+            }
+
+            // SxFy Pos Check
+            if (activeSxFyRules.length > 0) {
+                activeSxFyRules.forEach(rule => {
+                    if (rule.keyPos && rule.keyPos === currentPathStr) {
+                        timeline.push({
+                            time: sxFyBlockTime,
+                            ceid: `S${rule.s}F${rule.f} ${rule.keyPos}`,
+                            ruleId: rule.id,
+                            type: 'SxFy',
+                            desc: rule.desc ? `${rule.desc}: ${valStr}` : `值: ${valStr}`,
+                            line: i + 1
+                        })
+                    }
+                })
             }
           }
         }
@@ -422,13 +775,13 @@ const jumpToLine = (lineNumber: number) => {
   background-color: transparent;
 }
 :deep(.cm-scroller::-webkit-scrollbar-thumb) {
-  background-color: rgba(148, 163, 184, 0.4);
+  background-color: rgba(100, 116, 139, 0.8);
   border: 4px solid transparent;
   background-clip: padding-box;
   border-radius: 9999px;
 }
 :deep(.cm-scroller::-webkit-scrollbar-thumb:hover) {
-  background-color: rgba(148, 163, 184, 0.7);
+  background-color: rgba(71, 85, 105, 1);
 }
 :deep(.cm-scroller::-webkit-scrollbar-corner) {
   background-color: transparent;
