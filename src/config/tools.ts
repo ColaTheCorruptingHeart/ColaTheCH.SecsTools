@@ -56,6 +56,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Switch',
         color: '#ec4899', // pink-500
         componentPath: 'BaseConverter'
+      },
+      {
+        id: 'ascii-hex-converter',
+        name: 'ASCII / Hex 转换',
+        desc: '支持大块纯文本/ASCII码与十六进制 (Hex) 之间的相互转换。',
+        path: '/tools/ascii-hex-converter',
+        icon: 'Switch',
+        color: '#a855f7', // purple-500
+        componentPath: 'AsciiHexConverter'
       }
     ]
   }
