@@ -368,7 +368,7 @@ const parseImportText = (text: string) => {
   const newRules: RuleItem[] = []
   text.split('\n').forEach(line => {
     const parts = line.split('=')
-    if (parts.length === 2 && parts[0].trim() !== '') {
+    if (parts.length === 2 && parts[0] && parts[1] && parts[0].trim() !== '') {
       const ceid = parts[0].trim()
       const desc = parts[1].trim()
       const existing = newRules.find(r => r.ceid === ceid)
@@ -431,7 +431,7 @@ const openSxFyDialog = (rule?: SxFyRuleItem) => {
             id: Date.now().toString() + Math.random().toString().slice(2,5), 
             s: 1, 
             f: 1, 
-            color: predefineColors.value[sxfyList.value.length % predefineColors.value.length], 
+            color: predefineColors.value[sxfyList.value.length % predefineColors.value.length] || '#f97316', 
             enabled: true, 
             keyPos: '', 
             desc: '' 
@@ -673,7 +673,7 @@ const applyRulesAndParse = () => {
           }
       })
 
-      const lines = logContent.value.split('\n')
+      const lines = logContent.value?.split('\n') || []
       const timeline: typeof timelineData.value = []
       
       let s6f11BlockLine = -1
@@ -685,10 +685,11 @@ const applyRulesAndParse = () => {
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]
+        if (typeof line !== 'string') continue
         
         // Match start of any SECS message header
         const headerMatch = line.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S(\d+)F(\d+))/i)
-        if (headerMatch) {
+        if (headerMatch && headerMatch[1] && headerMatch[2]) {
           const time = headerMatch[1]
           const sfName = headerMatch[2].toUpperCase() // "S6F11"
 
@@ -737,7 +738,7 @@ const applyRulesAndParse = () => {
             if (currentPath.length === 0) {
                 currentPath.push(0)
             } else {
-                currentPath[currentPath.length - 1]++
+                currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
             }
             currentPath.push(-1)
           } else if (lineTrim.startsWith('>')) {
@@ -752,18 +753,18 @@ const applyRulesAndParse = () => {
             if (currentPath.length === 0) {
                 currentPath.push(0)
             } else {
-                currentPath[currentPath.length - 1]++
+                currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
             }
             const currentPathStr = '[' + currentPath.join('][') + ']'
             
             // Reusable value extractor
             let valStr = ''
             const qsMatch = lineTrim.match(/['"](.*?)['"]/);
-            if (qsMatch) {
+            if (qsMatch && qsMatch[1] !== undefined) {
                 valStr = qsMatch[1]
             } else {
                 const typeMatcher = lineTrim.match(/<[^>\s]+\s+(?:\[.*?\]\s+)?(.*?)>/)
-                if (typeMatcher) {
+                if (typeMatcher && typeMatcher[1] !== undefined) {
                     valStr = typeMatcher[1].trim()
                 } else {
                      valStr = lineTrim.replace(/<|>/g, '').trim()
