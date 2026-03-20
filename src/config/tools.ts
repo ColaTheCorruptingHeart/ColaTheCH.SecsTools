@@ -65,6 +65,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Switch',
         color: '#a855f7', // purple-500
         componentPath: 'AsciiHexConverter'
+      },
+      {
+        id: 'log-timeline-analyzer',
+        name: '日志时间线分析',
+        desc: '解析并提取大体积SECS日志中的CEID，以时间线形式呈现，支持跳转对齐。',
+        path: '/tools/log-timeline-analyzer',
+        icon: 'Calendar',
+        color: '#3b82f6', // blue-500
+        componentPath: 'LogTimelineAnalyzer'
       }
     ]
   }
