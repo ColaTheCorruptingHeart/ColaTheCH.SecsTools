@@ -1,16 +1,31 @@
 <template>
-  <div class="base-converter w-full h-full flex flex-col gap-4 p-4">
-    <!-- Header -->
-    <div class="flex-none">
-      <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">进制转换</h2>
-      <p class="text-sm text-gray-500">支持输入多个数字，请使用英文半角逗号在同一行内分隔。转换结果将自动保存到历史记录。</p>
-    </div>
+  <div class="h-full flex flex-col gap-4 p-4">
+    <!-- Header Controls -->
+    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 flex-none">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div class="flex items-center gap-2">
+          <div class="p-2 bg-pink-50 dark:bg-pink-900/30 rounded-lg">
+            <el-icon class="text-pink-500 text-xl"><Switch /></el-icon>
+          </div>
+          <div>
+            <h2 class="text-lg font-semibold text-slate-800 dark:text-gray-100 m-0">进制转换</h2>
+            <p class="text-xs text-slate-500 dark:text-gray-400 m-0 mt-0.5">支持多个数字同转，在线进制相互转化并带有历史记录</p>
+          </div>
+        </div>
 
-    <!-- Input Section -->
-    <el-card shadow="never" class="flex-none">
-      <div class="flex flex-col gap-4">
-        <div>
-          <span class="text-sm font-medium mr-4">输入类型（源格式）：</span>
+        <div class="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
+          <el-button size="small" type="primary" class="!rounded-md shadow-sm" @click="handleConvert">
+            转换并记录
+          </el-button>
+          <div class="w-px h-4 bg-slate-300 dark:bg-slate-600 mx-1"></div>
+          <el-button size="small" type="danger" plain class="!rounded-md" @click="inputText = ''">清空输入</el-button>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-300">
+        <div class="flex items-center gap-2">
+          <span class="font-medium">输入类型 (源格式):</span>
           <el-radio-group v-model="inputBase" size="small">
             <el-radio-button :value="2">二进制 (2)</el-radio-button>
             <el-radio-button :value="8">八进制 (8)</el-radio-button>
@@ -18,72 +33,77 @@
             <el-radio-button :value="16">十六进制 (16)</el-radio-button>
           </el-radio-group>
         </div>
-
-        <div>
-          <el-input
-            v-model="inputText"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入待转换数字，使用英文逗号 (,) 分隔。例如: 10, 15, 2A"
-            clearable
-            @keyup.enter.ctrl="handleConvert"
-          />
-        </div>
-
-        <div class="flex justify-end gap-2">
-          <el-button @click="inputText = ''">清空输入</el-button>
-          <el-button type="primary" @click="handleConvert">转换并添加到历史</el-button>
-        </div>
       </div>
-    </el-card>
+    </div>
 
-    <!-- History Section -->
-    <el-card shadow="never" class="flex-auto flex flex-col overflow-hidden">
-      <template #header>
-        <div class="flex justify-between items-center">
-          <span class="font-bold">转换历史</span>
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col gap-4 min-h-0">
+      <!-- Input Panel -->
+      <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col flex-none">
+        <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center justify-between shrink-0">
+          <span class="text-sm font-medium text-slate-600 dark:text-slate-300">输入区</span>
+          <span class="text-xs text-slate-400 hidden sm:inline-block">使用英文半角逗号 (,) 分隔多个数字。例如: 10, 15, 2A</span>
+        </div>
+        <el-input
+          v-model="inputText"
+          type="textarea"
+          :rows="3"
+          placeholder="请输入待转换数字..."
+          class="flex-1 !border-0 flex custom-textarea"
+          :input-style="{ resize: 'none', border: 'none', boxShadow: 'none' }"
+          @keyup.enter.ctrl="handleConvert"
+        />
+      </div>
+
+      <!-- History Panel -->
+      <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col flex-auto overflow-hidden">
+        <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center justify-between shrink-0">
+          <span class="text-sm font-medium text-slate-600 dark:text-slate-300">转换历史</span>
           <el-button type="danger" size="small" plain @click="clearHistory" :disabled="!historyList.length">
-            清空历史
+            <el-icon class="mr-1"><Delete /></el-icon> 清空历史
           </el-button>
         </div>
-      </template>
-
-      <el-table
-        :data="historyList"
-        style="width: 100%"
-        height="100%"
-        border
-        stripe
-        table-layout="auto"
-      >
-        <el-table-column prop="time" label="时间" min-width="100" />
-        <el-table-column label="原始输入" min-width="150">
-          <template #default="{ row }">
-            <span class="font-mono text-blue-600 dark:text-blue-400">{{ row.original }}</span>
-            <el-tag size="small" class="ml-2" type="info">{{ row.sourceBase }}进制</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="hex" label="十六进制 (Hex)" min-width="120" class-name="font-mono" />
-        <el-table-column prop="dec" label="十进制 (Dec)" min-width="120" class-name="font-mono" />
-        <el-table-column prop="oct" label="八进制 (Oct)" min-width="120" class-name="font-mono" />
-        <el-table-column prop="bin" label="二进制 (Bin)" min-width="150" class-name="font-mono" />
-        <el-table-column label="操作" width="80" align="center" fixed="right">
-          <template #default="{ $index }">
-            <el-button link type="danger" size="small" @click="removeHistoryItem($index)">
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-        <template #empty>
-          <el-empty description="暂无历史转换记录" :image-size="60" />
-        </template>
-      </el-table>
-    </el-card>
+        
+        <div class="flex-1 overflow-hidden">
+          <el-table
+            :data="historyList"
+            style="width: 100%"
+            height="100%"
+            border
+            stripe
+            table-layout="auto"
+          >
+            <el-table-column prop="time" label="时间" min-width="100" />
+            <el-table-column label="原始输入" min-width="150">
+              <template #default="{ row }">
+                <span class="font-mono text-blue-600 dark:text-blue-400">{{ row.original }}</span>
+                <el-tag size="small" class="ml-2" type="info">{{ row.sourceBase }}进制</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="hex" label="十六进制 (Hex)" min-width="120" class-name="font-mono" />
+            <el-table-column prop="dec" label="十进制 (Dec)" min-width="120" class-name="font-mono" />
+            <el-table-column prop="oct" label="八进制 (Oct)" min-width="120" class-name="font-mono" />
+            <el-table-column prop="bin" label="二进制 (Bin)" min-width="150" class-name="font-mono" />
+            <el-table-column label="操作" width="80" align="center" fixed="right">
+              <template #default="{ $index }">
+                <el-button link type="danger" size="small" @click="removeHistoryItem($index)">
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+            <template #empty>
+              <el-empty description="暂无历史转换记录" :image-size="60" />
+            </template>
+          </el-table>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
+import { Switch, Delete } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 interface HistoryRecord {
@@ -194,11 +214,8 @@ const removeHistoryItem = (index: number) => {
 </script>
 
 <style scoped>
-/* Ensure flex layout behaves correctly for the card containers */
-:deep(.el-card__body) {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
+.custom-textarea :deep(.el-textarea__inner) {
+  padding: 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 </style>
