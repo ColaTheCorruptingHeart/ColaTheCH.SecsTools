@@ -13,6 +13,7 @@
                </div>
            </div>
            <div class="flex items-center gap-2">
+               <el-button type="danger" plain @click="clearAllData">清空数据</el-button>
                <el-button type="primary" @click="triggerUpload">加载日志文件</el-button>
                <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" @change="onFileSelected" />
            </div>
@@ -77,8 +78,7 @@
                 <el-button class="flex-1 !ml-0" size="small" @click="exportJsonConfig">导出规则</el-button>
             </div>
             <div class="flex gap-2">
-                <el-button class="flex-1 !ml-0" size="small" type="danger" plain @click="clearAllData">清空数据</el-button>
-                <el-button class="flex-1 !ml-0" size="small" type="primary" @click="applyRulesAndParse" :disabled="!logContent">重新分析</el-button>
+                <el-button class="w-full" size="small" type="primary" @click="applyRulesAndParse" :disabled="!logContent">重新分析全记录</el-button>
             </div>
             <input type="file" ref="jsonFileInput" class="hidden" accept=".json" @change="onJsonFileSelected" />
          </div>
@@ -237,7 +237,7 @@ interface SxFyRuleItem {
 
 const rulesList = ref<RuleItem[]>([])
 const sxfyList = ref<SxFyRuleItem[]>([
-  { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true }
+  { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true, desc: 'RCMD' }
 ])
 
 const predefineColors = ref([
