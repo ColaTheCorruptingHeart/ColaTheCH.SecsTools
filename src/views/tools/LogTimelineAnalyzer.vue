@@ -8,7 +8,7 @@
                    <el-icon class="text-blue-500 text-xl"><Calendar /></el-icon>
                </div>
                <div>
-                   <h2 class="text-lg font-semibold text-slate-800 dark:text-gray-100 m-0">日志时间线分析</h2>
+                   <h2 class="text-lg font-semibold text-slate-800 dark:text-gray-100 m-0">SECS日志时间线分析</h2>
                    <p class="text-xs text-slate-500 dark:text-gray-400 m-0 mt-0.5">SECS日志解析，提取并在时间线呈现关键CEID与事件。</p>
                </div>
            </div>
@@ -102,12 +102,12 @@
             
             <!-- Custom Scrollbar Highlights Container -->
             <div 
-              v-if="logContent !== null && timelineData.length > 0 && viewRef"
+              v-if="logContent !== null && filteredTimelineData.length > 0 && viewRef"
               class="absolute right-0 top-0 w-[14px] pointer-events-none z-10 opacity-100 transition-opacity"
               :style="{ bottom: scrollInfo.bottomOffset + 'px' }"
             >
               <div 
-                v-for="(item, index) in timelineData" 
+                v-for="(item, index) in filteredTimelineData" 
                 :key="'mark-'+index"
                 class="absolute right-[2px] w-[10px] h-[3px] rounded-[1px] opacity-40 group-hover:opacity-60 z-20 transition-all hover:scale-110"
                 :style="{ top: getScrollMarkerTop(item.line), backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
@@ -118,14 +118,24 @@
 
       <!-- Right: Timeline -->
       <div class="lg:w-72 xl:w-80 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden h-72 lg:h-full">
-         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 px-4 font-medium text-sm flex justify-between items-center text-slate-600 dark:text-slate-300 shrink-0">
-             <span>时间线</span>
-             <el-tag size="small" type="info" round>找到 {{ timelineData.length }} 条记录</el-tag>
+         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 font-medium text-sm flex flex-col text-slate-600 dark:text-slate-300 shrink-0">
+             <div class="p-2 px-4 flex justify-between items-center">
+                 <span>时间线</span>
+                 <el-tag size="small" type="info" round>找到 {{ filteredTimelineData.length }} 条记录</el-tag>
+             </div>
+             <div class="px-2 pb-2 flex gap-2">
+                 <el-select v-model="filterSxFy" size="small" placeholder="SxFy过滤" clearable class="flex-1">
+                     <el-option v-for="opt in availableSxFyOptions" :key="opt" :label="opt" :value="opt" />
+                 </el-select>
+                 <el-select v-model="filterDesc" size="small" placeholder="关键值过滤" clearable multiple collapse-tags collapse-tags-tooltip class="flex-1" :disabled="!filterSxFy">
+                     <el-option v-for="opt in availableDescOptions" :key="opt" :label="opt" :value="opt" />
+                 </el-select>
+             </div>
          </div>
          <div class="flex-1 overflow-auto p-4 custom-scrollbar">
-             <div v-if="timelineData.length" class="flex flex-col gap-2">
+             <div v-if="filteredTimelineData.length" class="flex flex-col gap-2">
                  <div
-                     v-for="(item, index) in timelineData"
+                     v-for="(item, index) in filteredTimelineData"
                      :key="index"
                      class="cursor-pointer border-l-[3px] p-2 rounded-r transition-colors group flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-slate-700/50"
                      :style="{ borderLeftColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
@@ -156,8 +166,6 @@
     <el-dialog v-model="importDialogVisible" title="导入 CEID 匹配规则" width="500px">
       <div class="mb-2 text-sm text-slate-500">
         请输入或粘贴 CEID 对应规则，格式为 每行：<code>CEID=描述</code> 
-        <el-button type="primary" link icon="Document" size="small" @click="triggerRuleImport" class="ml-2">从文件导入</el-button>
-        <input type="file" ref="ruleFileInput" class="hidden" accept=".txt,.log,.csv" @change="onRuleFileSelected" />
       </div>
       <el-input
         v-model="importText"
@@ -203,7 +211,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef } from 'vue'
+import { ref, shallowRef, computed, watch } from 'vue'
 import { Calendar, Delete, Document, Edit } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Codemirror } from 'vue-codemirror'
@@ -212,7 +220,6 @@ import { Compartment, EditorState } from '@codemirror/state'
 
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
-const ruleFileInput = ref<HTMLInputElement | null>(null)
 const jsonFileInput = ref<HTMLInputElement | null>(null)
 
 const importDialogVisible = ref(false)
@@ -237,7 +244,8 @@ interface SxFyRuleItem {
 
 const rulesList = ref<RuleItem[]>([])
 const sxfyList = ref<SxFyRuleItem[]>([
-  { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true, desc: 'RCMD' }
+  { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true, desc: 'RCMD' },
+  { id: 'default-s7f20', s: 7, f: 20, keyPos: '', color: '#8b5cf6', enabled: true, desc: 'RecipeList' }
 ])
 
 const predefineColors = ref([
@@ -269,8 +277,91 @@ const getMarkerColor = (id: string, type: 'CEID' | 'SxFy' = 'CEID', ruleId?: str
   return rule ? rule.color : '#3b82f6'
 }
 
-const triggerRuleImport = () => {
-  ruleFileInput.value?.click()
+const filterSxFy = ref<string>('')
+const filterDesc = ref<string[]>([])
+
+const availableSxFyOptions = computed(() => {
+    const sxfySet = new Set<string>()
+    timelineData.value.forEach(item => {
+        if (item.type === 'CEID') {
+            sxfySet.add('S6F11')
+        } else if (item.ceid) {
+            const match = item.ceid.match(/S\d+F\d+/)
+            if (match) sxfySet.add(match[0])
+        }
+    })
+    return Array.from(sxfySet).sort()
+})
+
+const availableDescOptions = computed(() => {
+    if (!filterSxFy.value) return []
+    const descSet = new Set<string>()
+    timelineData.value.forEach(item => {
+        let isMatch = false
+        if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
+            isMatch = true
+        } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
+            isMatch = true
+        }
+        if (isMatch && item.desc) {
+            descSet.add(item.desc)
+        }
+    })
+    return Array.from(descSet).sort()
+})
+
+const filteredTimelineData = computed(() => {
+    return timelineData.value.filter(item => {
+        if (filterSxFy.value) {
+            let isMatch = false
+            if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
+                isMatch = true
+            } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
+                isMatch = true
+            }
+            if (!isMatch) return false
+            if (filterDesc.value.length > 0 && !filterDesc.value.includes(item.desc)) return false
+        }
+        return true
+    })
+})
+
+watch([filterSxFy, filterDesc], ([newSxFy, newDesc], [oldSxFy, oldDesc]) => {
+    // 避免无限递归
+    if (newSxFy !== oldSxFy) {
+        if (newSxFy) {
+            const newArr = filterDesc.value.filter(desc => availableDescOptions.value.includes(desc))
+            if (newArr.length !== filterDesc.value.length) {
+                filterDesc.value = newArr
+            }
+        } else {
+            if (filterDesc.value.length > 0) {
+                filterDesc.value = []
+            }
+        }
+    }
+    updateHighlights()
+}, { deep: true })
+
+const getRandomDistinctColor = () => {
+  const h = Math.floor(Math.random() * 360)
+  const s = Math.floor(Math.random() * 40 + 60) // 60-100%
+  const l = Math.floor(Math.random() * 20 + 40) // 40-60%
+  
+  const c = (1 - Math.abs(2 * l / 100 - 1)) * (s / 100)
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1))
+  const m = l / 100 - c / 2
+  let r = 0, g = 0, b = 0
+
+  if (0 <= h && h < 60) { r = c; g = x; b = 0 }
+  else if (60 <= h && h < 120) { r = x; g = c; b = 0 }
+  else if (120 <= h && h < 180) { r = 0; g = c; b = x }
+  else if (180 <= h && h < 240) { r = 0; g = x; b = c }
+  else if (240 <= h && h < 300) { r = x; g = 0; b = c }
+  else if (300 <= h && h < 360) { r = c; g = 0; b = x }
+
+  const toHex = (n: number) => Math.round((n + m) * 255).toString(16).padStart(2, '0')
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
 
 const parseImportText = (text: string) => {
@@ -285,7 +376,7 @@ const parseImportText = (text: string) => {
         newRules.push({
           ceid,
           desc,
-          color: '#3b82f6',
+          color: getRandomDistinctColor(),
           enabled: true
         })
       } else if (existing.desc !== desc) {
@@ -294,22 +385,6 @@ const parseImportText = (text: string) => {
     }
   })
   return newRules
-}
-
-const onRuleFileSelected = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-
-  try {
-    const text = await file.text()
-    importText.value = text
-  } catch (err: any) {
-    ElMessage.error('读取规则文件失败: ' + err.message)
-  }
-  
-  if (ruleFileInput.value) {
-    ruleFileInput.value.value = ''
-  }
 }
 
 const confirmImport = () => {
@@ -399,10 +474,18 @@ const removeSxFyRule = (index: number) => {
 }
 
 const updateHighlights = () => {
-  if (!viewRef.value || timelineData.value.length === 0) return
+  if (!viewRef.value) return
+  
+  if (filteredTimelineData.value.length === 0) {
+    viewRef.value.dispatch({
+      effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
+    })
+    return
+  }
+  
   const doc = viewRef.value.state.doc
   viewRef.value.dispatch({
-    effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(timelineData.value, doc)))
+    effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(filteredTimelineData.value, doc)))
   })
 }
 
@@ -565,6 +648,8 @@ const clearAllData = () => {
     sxfyList.value = []
     logContent.value = null
     timelineData.value = []
+    filterSxFy.value = ''
+    filterDesc.value = []
     if (fileInput.value) fileInput.value.value = ''
     if (viewRef.value) {
       viewRef.value.dispatch({
@@ -723,15 +808,15 @@ const applyRulesAndParse = () => {
       }
 
       // Apply Highlights
-      if (viewRef.value && timeline.length > 0) {
+      if (viewRef.value && filteredTimelineData.value.length > 0) {
         editorTotalLines.value = viewRef.value.state.doc.lines
         syncScrollGeometry(viewRef.value)
         const doc = viewRef.value.state.doc
         
         viewRef.value.dispatch({
-          effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(timeline, doc)))
+          effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(filteredTimelineData.value, doc)))
         })
-      } else if (viewRef.value && timeline.length === 0) {
+      } else if (viewRef.value && filteredTimelineData.value.length === 0) {
         viewRef.value.dispatch({
           effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
         })

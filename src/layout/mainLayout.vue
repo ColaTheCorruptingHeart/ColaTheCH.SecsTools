@@ -59,15 +59,19 @@
           </template>
         </el-menu-item>
 
-        <el-sub-menu v-for="category in toolsConfig" :key="category.id" :index="category.id">
-          <template #title>
-            <el-icon><component :is="Icons[category.icon as keyof typeof Icons] || Icons.Tools" /></el-icon>
-            <span class="font-medium text-[13.5px]">{{ category.name }}</span>
-          </template>
-          <el-menu-item v-for="tool in category.tools" :key="tool.id" :index="tool.path" class="text-[13px]">
-            {{ tool.name }}
-          </el-menu-item>
-        </el-sub-menu>
+        <template v-for="category in toolsConfig" :key="category.id">
+          <el-sub-menu v-if="category.id !== 'hidden-tools'" :index="category.id">
+            <template #title>
+              <el-icon><component :is="Icons[category.icon as keyof typeof Icons] || Icons.Tools" /></el-icon>
+              <span class="font-medium text-[13.5px]">{{ category.name }}</span>
+            </template>
+            <template v-for="tool in category.tools" :key="tool.id">
+              <el-menu-item v-if="!tool.hidden" :index="tool.path" class="text-[13px]">
+                {{ tool.name }}
+              </el-menu-item>
+            </template>
+          </el-sub-menu>
+        </template>
       </el-menu>
 
       <!-- 侧边栏折叠把手 -->

@@ -56,21 +56,22 @@
         </div>
       </div>
 
-      <div v-for="category in toolsConfig" :key="category.id" class="mb-8">
-        <div class="mb-4">
-          <h2 class="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-            <el-icon class="text-blue-500"><component :is="Icons[category.icon as keyof typeof Icons] || Icons.Tools"/></el-icon>
-            {{ category.name }}
-          </h2>
-        </div>
+      <template v-for="category in toolsConfig" :key="category.id">
+        <div v-if="category.id !== 'hidden-tools'" class="mb-8">
+          <div class="mb-4">
+            <h2 class="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+              <el-icon class="text-blue-500"><component :is="Icons[category.icon as keyof typeof Icons] || Icons.Tools"/></el-icon>
+              {{ category.name }}
+            </h2>
+          </div>
 
-        <div class="tools-grid flex flex-wrap gap-6 xl:grid xl:grid-cols-4 lg:grid-cols-3 md:grid-cols-2">
-          <div
-            v-for="tool in category.tools"
-            :key="tool.id"
-            @click="goToTool(tool.path)"
-            class="group relative bg-white rounded-xl border border-slate-200 p-5 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:border-blue-300 transition-all duration-300"
-          >
+          <div class="tools-grid flex flex-wrap gap-6 xl:grid xl:grid-cols-4 lg:grid-cols-3 md:grid-cols-2">
+            <template v-for="tool in category.tools" :key="tool.id">
+              <div
+                v-if="!tool.hidden"
+                @click="goToTool(tool.path)"
+                class="group relative bg-white rounded-xl border border-slate-200 p-5 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:border-blue-300 transition-all duration-300 w-full lg:w-auto"
+              >
             <div class="absolute top-3 right-3 p-1.5 rounded-full hover:bg-slate-100 transition-colors z-10" @click.stop="toggleFavorite(tool.id, $event)">
               <el-icon :class="[isFavorite(tool.id) ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400', 'text-lg transition-transform hover:scale-110']">
                 <component :is="isFavorite(tool.id) ? Icons.StarFilled : Icons.Star" />
@@ -88,12 +89,15 @@
               </div>
             </div>
           </div>
+          </template>
         </div>
       </div>
+      </template>
     </div>
 
     <!-- 拖拽调整区域条 -->
     <div
+      v-if="!isScratchpadCollapsed"
       :class="[
         'transition-colors bg-slate-100 hover:bg-indigo-300 active:bg-indigo-400 rounded-full relative z-10 shrink-0',
         splitMode === 'horizontal' ? 'w-1.5 cursor-col-resize mx-2 mt-2 mb-2' : 'h-1.5 cursor-row-resize my-1 mx-2'
@@ -103,12 +107,22 @@
 
     <!-- 下半部分：随手记区块 -->
     <div
-      class="border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col bg-white shrink-0"
+      v-if="!isScratchpadCollapsed"
+      class="border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col bg-white shrink-0 relative group"
       :style="splitMode === 'horizontal'
         ? { width: scratchpadWidth + '%', minWidth: '300px' }
         : { height: scratchpadHeight + '%', minHeight: '150px' }"
     >
-      <Scratchpad :layout-mode="splitMode" @toggle-layout="toggleLayout" />
+      <Scratchpad :layout-mode="splitMode" @toggle-layout="toggleLayout" @minimize="isScratchpadCollapsed = true" />
+    </div>
+    
+    <!-- 随手记收起状态的悬浮按钮 -->
+    <div v-show="isScratchpadCollapsed" class="fixed right-6 bottom-6 z-50">
+      <el-tooltip content="展开随手记" placement="top">
+        <el-button type="primary" circle size="large" class="shadow-lg" @click="isScratchpadCollapsed = false">
+          <el-icon size="20"><component :is="Icons.EditPen" /></el-icon>
+        </el-button>
+      </el-tooltip>
     </div>
   </div>
 </template>
@@ -168,6 +182,11 @@ const toggleLayout = () => {
 // === 拖拽调整大小逻辑 ===
 const scratchpadHeight = ref(45) // 仅当垂直时
 const scratchpadWidth = ref(40)  // 当水平时
+const isScratchpadCollapsed = ref(false)
+
+watch(isScratchpadCollapsed, (newVal) => {
+  localStorage.setItem('heySecsTools_scratchpadCollapsed', String(newVal))
+})
 
 // 页面加载时的状态初始化
 onMounted(() => {
@@ -186,6 +205,9 @@ onMounted(() => {
 
   const savedWidth = localStorage.getItem('heySecsTools_scratchpadWidth')
   if (savedWidth) scratchpadWidth.value = parseFloat(savedWidth)
+
+  const savedCollapsed = localStorage.getItem('heySecsTools_scratchpadCollapsed')
+  if (savedCollapsed === 'true') isScratchpadCollapsed.value = true
 })
 
 const startDrag = (e: MouseEvent) => {

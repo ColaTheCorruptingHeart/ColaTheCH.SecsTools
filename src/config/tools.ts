@@ -6,6 +6,7 @@ export interface ToolItem {
   icon: string;
   color: string;
   componentPath: string;
+  hidden?: boolean;
 }
 
 export interface ToolCategory {
@@ -17,9 +18,9 @@ export interface ToolCategory {
 
 export const toolsConfig: ToolCategory[] = [
   {
-    id: 'dev-tools',
-    name: '开发工具',
-    icon: 'Tools',
+    id: 'formatting',
+    name: '格式化',
+    icon: 'Document',
     tools: [
       {
         id: 'json',
@@ -38,16 +39,14 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Document',
         color: '#f59e0b', // amber-500
         componentPath: 'SecsSmlFormatter'
-      },
-      {
-        id: 'scratchpad',
-        name: '随手记',
-        desc: '支持自动分块、高亮渲染的沉浸式文本便签。',
-        path: '/tools/scratchpad',
-        icon: 'EditPen',
-        color: '#6366f1', // indigo-500
-        componentPath: 'ScratchpadView'
-      },
+      }
+    ]
+  },
+  {
+    id: 'conversion',
+    name: '转换',
+    icon: 'Switch',
+    tools: [
       {
         id: 'base-converter',
         name: '进制转换',
@@ -65,15 +64,39 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Switch',
         color: '#a855f7', // purple-500
         componentPath: 'AsciiHexConverter'
-      },
+      }
+    ]
+  },
+  {
+    id: 'log-processing',
+    name: '日志处理',
+    icon: 'Histogram',
+    tools: [
       {
         id: 'log-timeline-analyzer',
-        name: '日志时间线分析',
-        desc: '解析并提取大体积SECS日志中的CEID，以时间线形式呈现，支持跳转对齐。',
+        name: 'SECS日志时间线分析',
+        desc: '解析并提取SECS日志中的关键信息，以时间线形式呈现，支持跳转对齐。',
         path: '/tools/log-timeline-analyzer',
         icon: 'Calendar',
         color: '#3b82f6', // blue-500
         componentPath: 'LogTimelineAnalyzer'
+      }
+    ]
+  },
+  {
+    id: 'hidden-tools',
+    name: '隐藏工具',
+    icon: 'Hide',
+    tools: [
+      {
+        id: 'scratchpad',
+        name: '随手记',
+        desc: '支持自动分块、高亮渲染的沉浸式文本便签。',
+        path: '/tools/scratchpad',
+        icon: 'EditPen',
+        color: '#6366f1', // indigo-500
+        componentPath: 'ScratchpadView',
+        hidden: true
       }
     ]
   }
