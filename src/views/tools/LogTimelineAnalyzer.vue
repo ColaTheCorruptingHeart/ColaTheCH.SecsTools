@@ -70,7 +70,7 @@
              </div>
              <el-empty v-else description="暂无SxFy规则" :image-size="40" />
          </div>
-         
+
          <!-- Action -->
          <div class="p-2 border-t border-slate-200 dark:border-slate-700 flex-none flex flex-col gap-2 bg-slate-50 dark:bg-slate-900/50">
             <div class="flex gap-2">
@@ -99,15 +99,15 @@
             <div v-else class="h-full flex items-center justify-center text-slate-400 text-sm">
                请点击右上角按钮加载日志文件
             </div>
-            
+
             <!-- Custom Scrollbar Highlights Container -->
-            <div 
+            <div
               v-if="logContent !== null && filteredTimelineData.length > 0 && viewRef"
               class="absolute right-0 top-0 w-[14px] pointer-events-none z-10 opacity-100 transition-opacity"
               :style="{ bottom: scrollInfo.bottomOffset + 'px' }"
             >
-              <div 
-                v-for="(item, index) in filteredTimelineData" 
+              <div
+                v-for="(item, index) in filteredTimelineData"
                 :key="'mark-'+index"
                 class="absolute right-[2px] w-[10px] h-[3px] rounded-[1px] opacity-40 group-hover:opacity-60 z-20 transition-all hover:scale-110"
                 :style="{ top: getScrollMarkerTop(item.line), backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
@@ -143,9 +143,9 @@
                  >
                      <div class="flex justify-between items-center gap-2">
                          <span class="text-[11px] text-slate-600 font-mono tracking-tight shrink-0">{{ item.time }}</span>
-                         <span 
+                         <span
                             class="text-[10px] px-1.5 py-0.5 rounded font-mono truncate border"
-                            :style="{ 
+                            :style="{
                               color: getMarkerColor(item.ceid, item.type, item.ruleId),
                               backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '20',
                               borderColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '40'
@@ -165,7 +165,7 @@
     <!-- Rule Import Dialog -->
     <el-dialog v-model="importDialogVisible" title="导入 CEID 匹配规则" width="500px">
       <div class="mb-2 text-sm text-slate-500">
-        请输入或粘贴 CEID 对应规则，格式为 每行：<code>CEID=描述</code> 
+        请输入或粘贴 CEID 对应规则，格式为 每行：<code>CEID=描述</code>
       </div>
       <el-input
         v-model="importText"
@@ -347,7 +347,7 @@ const getRandomDistinctColor = () => {
   const h = Math.floor(Math.random() * 360)
   const s = Math.floor(Math.random() * 40 + 60) // 60-100%
   const l = Math.floor(Math.random() * 20 + 40) // 40-60%
-  
+
   const c = (1 - Math.abs(2 * l / 100 - 1)) * (s / 100)
   const x = c * (1 - Math.abs((h / 60) % 2 - 1))
   const m = l / 100 - c / 2
@@ -402,7 +402,7 @@ const confirmImport = () => {
   ElMessage.success(`成功导入 ${added} 条新规则`)
   importDialogVisible.value = false
   importText.value = ''
-  
+
   if (logContent.value) {
     applyRulesAndParse()
   }
@@ -427,14 +427,14 @@ const openSxFyDialog = (rule?: SxFyRuleItem) => {
         sxfyForm.value = { ...rule }
     } else {
         isSxFyEdit.value = false
-        sxfyForm.value = { 
-            id: Date.now().toString() + Math.random().toString().slice(2,5), 
-            s: 1, 
-            f: 1, 
-            color: predefineColors.value[sxfyList.value.length % predefineColors.value.length] || '#f97316', 
-            enabled: true, 
-            keyPos: '', 
-            desc: '' 
+        sxfyForm.value = {
+            id: Date.now().toString() + Math.random().toString().slice(2,5),
+            s: 1,
+            f: 1,
+            color: predefineColors.value[sxfyList.value.length % predefineColors.value.length] || '#f97316',
+            enabled: true,
+            keyPos: '',
+            desc: ''
         }
     }
     sxfyDialogVisible.value = true
@@ -442,7 +442,7 @@ const openSxFyDialog = (rule?: SxFyRuleItem) => {
 
 const saveSxFyRule = () => {
     if (sxfyForm.value.keyPos) sxfyForm.value.keyPos = sxfyForm.value.keyPos.trim()
-    
+
     // Conflict Check
     const exists = sxfyList.value.find(r => r.s === sxfyForm.value.s && r.f === sxfyForm.value.f && r.keyPos === sxfyForm.value.keyPos && r.id !== sxfyForm.value.id)
     if (exists) {
@@ -475,14 +475,14 @@ const removeSxFyRule = (index: number) => {
 
 const updateHighlights = () => {
   if (!viewRef.value) return
-  
+
   if (filteredTimelineData.value.length === 0) {
     viewRef.value.dispatch({
       effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
     })
     return
   }
-  
+
   const doc = viewRef.value.state.doc
   viewRef.value.dispatch({
     effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(filteredTimelineData.value, doc)))
@@ -495,7 +495,7 @@ const getScrollMarkerTop = (line: number) => {
   if (total <= 1) return '0%'
   // Map 1-indexed line to 0-based ratio
   const ratio = Math.max(0, line - 1) / total
-  // Prevent bottom marker from bleeding out by shifting it upwards proportionally 
+  // Prevent bottom marker from bleeding out by shifting it upwards proportionally
   return `calc(${ratio * 100}% - ${ratio * 3}px)`
 }
 
@@ -511,7 +511,7 @@ const syncScrollGeometry = (view: EditorView) => {
 // CodeMirror Extensions Setup
 const highlightCompartment = new Compartment()
 const baseTheme = EditorView.theme({
-  ".cm-scroller": { 
+  ".cm-scroller": {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important',
     fontSize: '12px'
   }
@@ -524,14 +524,14 @@ const getHighlightExtension = (timeline: typeof timelineData.value, doc: any) =>
     if (item.line <= doc.lines) {
       const lineData = doc.line(item.line)
       const color = getMarkerColor(item.ceid, item.type, item.ruleId)
-      
+
       const LineHighlight = Decoration.line({
         attributes: { style: `background-color: ${color}25 !important` } // 25 is hex for slight transparency
       })
       builder.push(LineHighlight.range(lineData.from, lineData.from))
     }
   })
-  
+
   builder.sort((a, b) => a.from - b.from)
   const uniqueBuilder = builder.filter((item, pos, ary) => !pos || item.from !== ary[pos - 1].from)
   return Decoration.set(uniqueBuilder, true)
@@ -571,7 +571,7 @@ const onFileSelected = async (e: Event) => {
   if (!file) return
 
   loading.value = true
-  
+
   // Reset existing
   timelineData.value = []
   if (viewRef.value) {
@@ -579,13 +579,13 @@ const onFileSelected = async (e: Event) => {
         effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
     })
   }
-  
+
   // Use timeout to allow loading UI to render
   setTimeout(async () => {
     try {
       const text = await file.text()
       logContent.value = text
-      
+
       // Allow CodeMirror to render the doc first before applying decorations
       setTimeout(() => {
           applyRulesAndParse()
@@ -663,7 +663,7 @@ const clearAllData = () => {
 const applyRulesAndParse = () => {
   if (!logContent.value) return
   loading.value = true
-  
+
   setTimeout(() => {
     try {
       const ruleMap = new Map<string, string>()
@@ -675,29 +675,130 @@ const applyRulesAndParse = () => {
 
       const lines = logContent.value?.split('\n') || []
       const timeline: typeof timelineData.value = []
-      
+
       let s6f11BlockLine = -1
       let s6f11Time = ''
       let currentPath: number[] = []
-      
+
       let activeSxFyRules: SxFyRuleItem[] = []
       let sxFyBlockTime = ''
+
+      let pendingTime = ''
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i]
         if (typeof line !== 'string') continue
-        
-        // Match start of any SECS message header
-        const headerMatch = line.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S(\d+)F(\d+))/i)
-        if (headerMatch && headerMatch[1] && headerMatch[2]) {
-          const time = headerMatch[1]
-          const sfName = headerMatch[2].toUpperCase() // "S6F11"
 
+        const lineTrim = line.trim()
+        if (!lineTrim) continue
+
+        // Fast path: avoid regex on data payload lines (huge performance boost)
+        const firstChar = lineTrim[0];
+        if (firstChar === '<' || firstChar === '>') {
+          if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
+            if (lineTrim.startsWith('<L')) {
+              if (currentPath.length === 0) {
+                  currentPath.push(0)
+              } else {
+                  currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
+              }
+              currentPath.push(-1)
+            } else if (lineTrim.startsWith('>')) {
+              currentPath.pop()
+              if (currentPath.length <= 1) {
+                  s6f11BlockLine = -1
+                  activeSxFyRules = []
+                  currentPath = []
+              }
+            } else if (lineTrim.startsWith('<')) {
+              // Note: Data item
+              if (currentPath.length === 0) {
+                  currentPath.push(0)
+              } else {
+                  currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
+              }
+              const currentPathStr = '[' + currentPath.join('][') + ']'
+
+              // Reusable value extractor
+              let valStr = ''
+              const qsMatch = lineTrim.match(/['"](.*?)['"]/);
+              if (qsMatch && qsMatch[1] !== undefined) {
+                  valStr = qsMatch[1]
+              } else {
+                  const typeMatcher = lineTrim.match(/<[^>\s]+\s+(?:\[.*?\]\s+)?(.*?)>/)
+                  if (typeMatcher && typeMatcher[1] !== undefined) {
+                      valStr = typeMatcher[1].trim()
+                  } else {
+                       valStr = lineTrim.replace(/<|>/g, '').trim()
+                  }
+              }
+
+              // CEID S6F11 Check
+              if (s6f11BlockLine !== -1 && currentPathStr === '[0][1]') {
+                  if (ruleMap.has(valStr)) {
+                      timeline.push({
+                          time: s6f11Time,
+                          ceid: valStr,
+                          type: 'CEID',
+                          desc: ruleMap.get(valStr)!,
+                          line: i + 1
+                      })
+                  }
+              }
+
+              // SxFy Pos Check
+              if (activeSxFyRules.length > 0) {
+                  activeSxFyRules.forEach(rule => {
+                      if (rule.keyPos && rule.keyPos === currentPathStr) {
+                          timeline.push({
+                              time: sxFyBlockTime,
+                              ceid: `S${rule.s}F${rule.f} ${rule.keyPos}`,
+                              ruleId: rule.id,
+                              type: 'SxFy',
+                              desc: rule.desc ? `${rule.desc}: ${valStr}` : `值: ${valStr}`,
+                              line: i + 1
+                          })
+                      }
+                  })
+              }
+            }
+          }
+          continue;
+        }
+
+        // Quick check for different header patterns
+        const headerMatchOld = lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S\d+F\d+)/i)
+        const sfMatchOnly = lineTrim.match(/^(S\d+F\d+)(?:\s+W)?$/i)
+        const timePrefixMatch = lineTrim.match(/^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/)
+
+        let time = ''
+        let sfName = ''
+
+        if (headerMatchOld && headerMatchOld[1] && headerMatchOld[2]) {
+          time = headerMatchOld[1]
+          sfName = headerMatchOld[2].toUpperCase() // "S6F11"
+          pendingTime = ''
+        } else if (sfMatchOnly && sfMatchOnly[1] && pendingTime) {
+          time = pendingTime
+          sfName = sfMatchOnly[1].toUpperCase()
+          pendingTime = ''
+        } else if (timePrefixMatch && timePrefixMatch[1]) {
+          pendingTime = timePrefixMatch[1]
+          // If we hit another time marker, reset block structure
+          if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
+            s6f11BlockLine = -1
+            activeSxFyRules = []
+            currentPath = []
+          }
+          continue
+        }
+
+        if (time && sfName) {
           // If there's an ongoing block, reset
           currentPath = []
-          
+
           activeSxFyRules = sxfyList.value.filter(r => r.enabled !== false && `S${r.s}F${r.f}` === sfName)
-          
+
           if (sfName === 'S6F11') {
             s6f11BlockLine = i + 1
             s6f11Time = time
@@ -722,87 +823,8 @@ const applyRulesAndParse = () => {
           }
           continue
         }
-
-        if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
-          const lineTrim = line.trim()
-          
-          // Check if another message header unexpectedly started
-          if (lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)/)) {
-            s6f11BlockLine = -1
-            activeSxFyRules = []
-            i-- // Re-evaluate this line in the next iteration
-            continue
-          }
-
-          if (lineTrim.startsWith('<L')) {
-            if (currentPath.length === 0) {
-                currentPath.push(0)
-            } else {
-                currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
-            }
-            currentPath.push(-1)
-          } else if (lineTrim.startsWith('>')) {
-            currentPath.pop()
-            if (currentPath.length <= 1) {
-                s6f11BlockLine = -1
-                activeSxFyRules = []
-                currentPath = []
-            }
-          } else if (lineTrim.startsWith('<')) {
-            // Note: Data item
-            if (currentPath.length === 0) {
-                currentPath.push(0)
-            } else {
-                currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
-            }
-            const currentPathStr = '[' + currentPath.join('][') + ']'
-            
-            // Reusable value extractor
-            let valStr = ''
-            const qsMatch = lineTrim.match(/['"](.*?)['"]/);
-            if (qsMatch && qsMatch[1] !== undefined) {
-                valStr = qsMatch[1]
-            } else {
-                const typeMatcher = lineTrim.match(/<[^>\s]+\s+(?:\[.*?\]\s+)?(.*?)>/)
-                if (typeMatcher && typeMatcher[1] !== undefined) {
-                    valStr = typeMatcher[1].trim()
-                } else {
-                     valStr = lineTrim.replace(/<|>/g, '').trim()
-                }
-            }
-
-            // CEID S6F11 Check
-            if (s6f11BlockLine !== -1 && currentPathStr === '[0][1]') {
-                if (ruleMap.has(valStr)) {
-                    timeline.push({
-                        time: s6f11Time,
-                        ceid: valStr,
-                        type: 'CEID',
-                        desc: ruleMap.get(valStr)!,
-                        line: i + 1 
-                    })
-                }
-            }
-
-            // SxFy Pos Check
-            if (activeSxFyRules.length > 0) {
-                activeSxFyRules.forEach(rule => {
-                    if (rule.keyPos && rule.keyPos === currentPathStr) {
-                        timeline.push({
-                            time: sxFyBlockTime,
-                            ceid: `S${rule.s}F${rule.f} ${rule.keyPos}`,
-                            ruleId: rule.id,
-                            type: 'SxFy',
-                            desc: rule.desc ? `${rule.desc}: ${valStr}` : `值: ${valStr}`,
-                            line: i + 1
-                        })
-                    }
-                })
-            }
-          }
-        }
       }
-      
+
       timelineData.value = timeline
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
@@ -813,7 +835,7 @@ const applyRulesAndParse = () => {
         editorTotalLines.value = viewRef.value.state.doc.lines
         syncScrollGeometry(viewRef.value)
         const doc = viewRef.value.state.doc
-        
+
         viewRef.value.dispatch({
           effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(filteredTimelineData.value, doc)))
         })
