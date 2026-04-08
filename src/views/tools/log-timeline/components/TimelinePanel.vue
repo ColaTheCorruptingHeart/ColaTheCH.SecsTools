@@ -18,22 +18,29 @@
     <div class="flex-1 overflow-auto p-4 custom-scrollbar">
       <div v-if="items.length" class="flex flex-col gap-2">
         <div
-          v-for="(item, index) in items"
-          :key="index"
+          v-for="item in items"
+          :key="getItemKey(item)"
           class="cursor-pointer border-l-[3px] p-2 rounded-r transition-colors group flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-slate-700/50"
           :style="{ borderLeftColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
           @click="emit('jump', item.line)"
         >
           <div class="flex justify-between items-center gap-2">
             <span class="text-[11px] text-slate-600 font-mono tracking-tight shrink-0">{{ item.time }}</span>
-            <span
-              class="text-[10px] px-1.5 py-0.5 rounded font-mono truncate border"
-              :style="{
-                color: getMarkerColor(item.ceid, item.type, item.ruleId),
-                backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '20',
-                borderColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '40'
-              }"
-            >{{ item.type === 'CEID' ? 'CEID' : 'SxFy' }}: {{ item.ceid }}</span>
+            <div class="flex items-center gap-2 min-w-0">
+              <span
+                class="text-[10px] px-1.5 py-0.5 rounded font-mono truncate border"
+                :style="{
+                  color: getMarkerColor(item.ceid, item.type, item.ruleId),
+                  backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '20',
+                  borderColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '40'
+                }"
+              >{{ item.type === 'CEID' ? 'CEID' : 'SxFy' }}: {{ item.ceid }}</span>
+              <el-checkbox
+                :model-value="selectedItemKeySet.has(getItemKey(item))"
+                @click.stop
+                @change="emit('toggleItemChecked', { key: getItemKey(item), checked: Boolean($event) })"
+              />
+            </div>
           </div>
           <div class="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:opacity-80 leading-tight">
             {{ item.desc }}
@@ -44,8 +51,9 @@
     </div>
 
     <div class="p-2 border-t border-slate-200 dark:border-slate-700 flex-none flex flex-col gap-2 bg-slate-50 dark:bg-slate-900/50">
-      <div class="flex items-center">
+      <div class="flex items-center gap-4 flex-wrap">
         <el-checkbox v-model="exportKeepTimeLineModel" size="small">保留时间行</el-checkbox>
+        <el-checkbox v-model="exportSelectedOnlyModel" size="small">只导出已勾选报文</el-checkbox>
       </div>
       <div class="flex gap-2">
         <el-button class="flex-1 !ml-0" size="small" type="primary" :disabled="!canExport" @click="emit('exportLogs')">
@@ -54,7 +62,7 @@
         </el-button>
         <el-button class="flex-1 !ml-0" size="small" plain :disabled="!canExport" @click="emit('exportCommandSet')">
           <el-icon class="mr-1"><Download /></el-icon>
-          导出命令集
+          导出报文集
         </el-button>
       </div>
     </div>
@@ -68,23 +76,32 @@ import type { TimelineItem } from '../types'
 
 const props = defineProps<{
   items: TimelineItem[]
+  selectedItemKeys: string[]
   filterSxFy: string
   filterDesc: string[]
   availableSxFyOptions: string[]
   availableDescOptions: string[]
   exportKeepTimeLine: boolean
+  exportSelectedOnly: boolean
   canExport: boolean
   getMarkerColor: (id: string, type?: 'CEID' | 'SxFy', ruleId?: string) => string
+  getItemKey: (item: TimelineItem) => string
 }>()
 
 const emit = defineEmits<{
   jump: [lineNumber: number]
+  toggleItemChecked: [payload: { key: string, checked: boolean }]
   exportLogs: []
   exportCommandSet: []
   'update:filterSxFy': [value: string]
   'update:filterDesc': [value: string[]]
   'update:exportKeepTimeLine': [value: boolean]
+  'update:exportSelectedOnly': [value: boolean]
 }>()
+
+const selectedItemKeySet = computed(() => {
+  return new Set(props.selectedItemKeys)
+})
 
 const filterSxFyModel = computed({
   get: () => props.filterSxFy,
@@ -104,6 +121,13 @@ const exportKeepTimeLineModel = computed({
   get: () => props.exportKeepTimeLine,
   set: (value: boolean) => {
     emit('update:exportKeepTimeLine', value)
+  }
+})
+
+const exportSelectedOnlyModel = computed({
+  get: () => props.exportSelectedOnly,
+  set: (value: boolean) => {
+    emit('update:exportSelectedOnly', value)
   }
 })
 </script>

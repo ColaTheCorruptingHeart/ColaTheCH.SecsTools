@@ -40,102 +40,57 @@
         />
         <input type="file" ref="jsonFileInput" class="hidden" accept=".json" @change="onJsonFileSelected" />
 
-      <!-- Middle: CodeMirror Log Viewer -->
-      <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
-         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 px-4 py-2 font-medium text-sm text-slate-600 dark:text-slate-300">日志内容</div>
-         <div class="flex-1 overflow-hidden relative group">
-            <Codemirror
-              v-if="logContent !== null"
-              v-model="logContent"
-              :style="{ height: '100%' }"
-              :extensions="extensions"
-              @ready="handleReady"
-              @scroll="handleScroll"
-            />
-            <div v-else class="h-full flex items-center justify-center text-slate-400 text-sm">
-               请点击右上角按钮加载日志文件
-            </div>
-
-            <!-- Custom Scrollbar Highlights Container -->
-            <div
-              v-if="logContent !== null && filteredTimelineData.length > 0 && viewRef"
-              class="absolute right-0 top-0 w-[14px] pointer-events-none z-10 opacity-100 transition-opacity"
-              :style="{ bottom: scrollInfo.bottomOffset + 'px' }"
-            >
-              <div
-                v-for="(item, index) in filteredTimelineData"
-                :key="'mark-'+index"
-                class="absolute right-[2px] w-[10px] h-[3px] rounded-[1px] opacity-40 group-hover:opacity-60 z-20 transition-all hover:scale-110"
-                :style="{ top: getScrollMarkerTop(item.line), backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
-              ></div>
-            </div>
-         </div>
-      </div>
+      <LogViewerPanel
+        :log-content="logContent"
+        :extensions="extensions"
+        :marker-items="filteredTimelineData"
+        :bottom-offset="scrollInfo.bottomOffset"
+        :has-view="Boolean(viewRef)"
+        :get-marker-color="getMarkerColor"
+        :get-scroll-marker-top="getScrollMarkerTop"
+        @update:logContent="logContent = $event"
+        @ready="handleReady"
+        @scroll="handleScroll"
+      />
 
       <!-- Right: Timeline -->
       <TimelinePanel
         :items="filteredTimelineData"
+        :selected-item-keys="selectedTimelineItemKeys"
         :filter-sx-fy="filterSxFy"
         :filter-desc="filterDesc"
         :available-sx-fy-options="availableSxFyOptions"
         :available-desc-options="availableDescOptions"
         :export-keep-time-line="exportKeepTimeLine"
-        :can-export="Boolean(filteredTimelineData.length && logContent)"
+        :export-selected-only="exportSelectedOnly"
+        :can-export="canExportTimelineItems"
         :get-marker-color="getMarkerColor"
+        :get-item-key="getTimelineItemKey"
         @update:filterSxFy="filterSxFy = $event"
         @update:filterDesc="filterDesc = $event"
         @update:exportKeepTimeLine="exportKeepTimeLine = $event"
+        @update:exportSelectedOnly="exportSelectedOnly = $event"
+        @toggleItemChecked="toggleTimelineItemChecked"
         @jump="jumpToLine"
         @exportLogs="exportMatchedLogs"
         @exportCommandSet="exportMatchedCommandSet"
       />
     </div>
 
-    <!-- Rule Import Dialog -->
-    <el-dialog v-model="importDialogVisible" title="导入 CEID 匹配规则" width="500px">
-      <div class="mb-2 text-sm text-slate-500">
-        请输入或粘贴 CEID 对应规则，格式为 每行：<code>CEID=描述</code>
-      </div>
-      <el-input
-        v-model="importText"
-        type="textarea"
-        :rows="8"
-        placeholder="例如：\n2300=MappingEnd\n700=PrJobCreated"
-      />
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="importDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="confirmImport">确定导入</el-button>
-        </span>
-      </template>
-    </el-dialog>
+    <CeidImportDialog
+      v-model="importDialogVisible"
+      :import-text="importText"
+      @update:importText="importText = $event"
+      @confirm="confirmImport"
+    />
 
-    <!-- SxFy Import Dialog -->
-    <el-dialog v-model="sxfyDialogVisible" :title="isSxFyEdit ? '编辑 SxFy 规则' : '添加 SxFy 规则'" width="450px" destroy-on-close>
-      <el-form :model="sxfyForm" label-width="110px" size="default">
-        <el-form-item label="Stream (S)">
-          <el-input-number v-model="sxfyForm.s" :min="1" :max="99" />
-        </el-form-item>
-        <el-form-item label="Function (F)">
-          <el-input-number v-model="sxfyForm.f" :min="0" :max="99" />
-        </el-form-item>
-        <el-form-item label="关键值位置">
-          <el-input v-model="sxfyForm.keyPos" placeholder="可选，如 [0][1]" />
-        </el-form-item>
-        <el-form-item label="自定义描述">
-          <el-input v-model="sxfyForm.desc" placeholder="为空时自动生成" />
-        </el-form-item>
-        <el-form-item label="标记颜色">
-          <el-color-picker v-model="sxfyForm.color" :predefine="predefineColors" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="sxfyDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="saveSxFyRule">确定</el-button>
-        </span>
-      </template>
-    </el-dialog>
+    <SxFyRuleDialog
+      v-model="sxfyDialogVisible"
+      :is-edit="isSxFyEdit"
+      :form="sxfyForm"
+      :predefine-colors="predefineColors"
+      @save="saveSxFyRule"
+    />
   </div>
 </template>
 
@@ -143,14 +98,16 @@
 import { ref, shallowRef, computed, watch } from 'vue'
 import { Calendar } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Codemirror } from 'vue-codemirror'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
 import { analyzeLogTimeline } from './log-timeline/parser'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import type { RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
+import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
+import SxFyRuleDialog from './log-timeline/components/SxFyRuleDialog.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
 
 const loading = ref(false)
@@ -184,16 +141,43 @@ const timelineData = ref<TimelineItem[]>([])
 const editorTotalLines = ref(1)
 const scrollInfo = ref({ bottomOffset: 0 })
 const exportKeepTimeLine = ref(true)
+const exportSelectedOnly = ref(false)
+const selectedTimelineItemKeys = ref<string[]>([])
 
 const viewRef = shallowRef<EditorView>()
 
+const ceidColorMap = computed(() => {
+  return new Map(rulesList.value.map(rule => [rule.ceid, rule.color]))
+})
+
+const sxfyColorMaps = computed(() => {
+  const byRuleId = new Map<string, string>()
+  const bySignature = new Map<string, string>()
+
+  sxfyList.value.forEach(rule => {
+    byRuleId.set(rule.id, rule.color)
+    bySignature.set(`S${rule.s}F${rule.f}`, rule.color)
+  })
+
+  return { byRuleId, bySignature }
+})
+
 const getMarkerColor = (id: string, type: 'CEID' | 'SxFy' = 'CEID', ruleId?: string) => {
   if (type === 'SxFy') {
-    const rule = sxfyList.value.find(r => r.id === ruleId) || sxfyList.value.find(r => `S${r.s}F${r.f}` === id || id.startsWith(`S${r.s}F${r.f}`))
-    return rule ? rule.color : '#10b981'
+    if (ruleId) {
+      const color = sxfyColorMaps.value.byRuleId.get(ruleId)
+      if (color) return color
+    }
+
+    const signature = id.match(/S\d+F\d+/)?.[0]
+    if (signature) {
+      const color = sxfyColorMaps.value.bySignature.get(signature)
+      if (color) return color
+    }
+
+    return '#10b981'
   }
-  const rule = rulesList.value.find(r => r.ceid === id)
-  return rule ? rule.color : '#3b82f6'
+  return ceidColorMap.value.get(id) ?? '#3b82f6'
 }
 
 const filterSxFy = ref<string>('')
@@ -247,6 +231,47 @@ const filteredTimelineData = computed(() => {
     return true
   })
 })
+
+const getTimelineItemKey = (item: TimelineItem) => {
+  return [
+    item.type || 'CEID',
+    item.line,
+    item.time,
+    item.ceid,
+    item.ruleId || '',
+    item.desc
+  ].join('|')
+}
+
+const selectedTimelineItemKeySet = computed(() => {
+  return new Set(selectedTimelineItemKeys.value)
+})
+
+const checkedFilteredTimelineData = computed(() => {
+  return filteredTimelineData.value.filter(item => {
+    return selectedTimelineItemKeySet.value.has(getTimelineItemKey(item))
+  })
+})
+
+const exportTimelineItems = computed(() => {
+  return exportSelectedOnly.value ? checkedFilteredTimelineData.value : filteredTimelineData.value
+})
+
+const canExportTimelineItems = computed(() => {
+  return Boolean(logContent.value && exportTimelineItems.value.length)
+})
+
+const toggleTimelineItemChecked = ({ key, checked }: { key: string, checked: boolean }) => {
+  const nextKeys = new Set(selectedTimelineItemKeys.value)
+
+  if (checked) {
+    nextKeys.add(key)
+  } else {
+    nextKeys.delete(key)
+  }
+
+  selectedTimelineItemKeys.value = Array.from(nextKeys)
+}
 
 watch([filterSxFy, filterDesc], ([newSxFy], [oldSxFy]) => {
   if (newSxFy !== oldSxFy) {
@@ -359,23 +384,24 @@ const openSxFyDialog = (rule?: SxFyRuleItem) => {
     sxfyDialogVisible.value = true
 }
 
-const saveSxFyRule = () => {
-    if (sxfyForm.value.keyPos) sxfyForm.value.keyPos = sxfyForm.value.keyPos.trim()
+const saveSxFyRule = (formValue: SxFyRuleItem) => {
+  const nextForm = { ...formValue }
+  if (nextForm.keyPos) nextForm.keyPos = nextForm.keyPos.trim()
 
     // Conflict Check
-    const exists = sxfyList.value.find(r => r.s === sxfyForm.value.s && r.f === sxfyForm.value.f && r.keyPos === sxfyForm.value.keyPos && r.id !== sxfyForm.value.id)
+  const exists = sxfyList.value.find(r => r.s === nextForm.s && r.f === nextForm.f && r.keyPos === nextForm.keyPos && r.id !== nextForm.id)
     if (exists) {
         ElMessage.warning('该 SxFy 规则及对应关键值位置已存在，请勿重复添加')
         return
     }
 
     if (isSxFyEdit.value) {
-        const idx = sxfyList.value.findIndex(r => r.id === sxfyForm.value.id)
+    const idx = sxfyList.value.findIndex(r => r.id === nextForm.id)
         if (idx !== -1) {
-            sxfyList.value.splice(idx, 1, { ...sxfyForm.value })
+      sxfyList.value.splice(idx, 1, nextForm)
         }
     } else {
-        sxfyList.value.push({ ...sxfyForm.value })
+    sxfyList.value.push(nextForm)
     }
     sxfyDialogVisible.value = false
     if (logContent.value) {
@@ -423,18 +449,32 @@ const downloadTextFile = (content: string, fileName: string) => {
   downloadBlobFile(new Blob([content], { type: 'text/plain;charset=utf-8' }), fileName)
 }
 
-const exportMatchedLogs = () => {
+const getExportCandidateTimelineItems = () => {
   if (!logContent.value) {
     ElMessage.warning('请先加载日志文件')
-    return
+    return null
   }
 
   if (!filteredTimelineData.value.length) {
     ElMessage.warning('当前没有可导出的命中记录')
+    return null
+  }
+
+  if (exportSelectedOnly.value && !checkedFilteredTimelineData.value.length) {
+    ElMessage.warning('当前没有已勾选的命中记录')
+    return null
+  }
+
+  return exportTimelineItems.value
+}
+
+const exportMatchedLogs = () => {
+  const exportItems = getExportCandidateTimelineItems()
+  if (!logContent.value || !exportItems) {
     return
   }
 
-  const exportedBlocks = buildExportedMatchedBlocks(logContent.value, filteredTimelineData.value, exportKeepTimeLine.value)
+  const exportedBlocks = buildExportedMatchedBlocks(logContent.value, exportItems, exportKeepTimeLine.value)
 
   if (!exportedBlocks.length) {
     ElMessage.warning('未能根据命中记录定位到完整报文')
@@ -448,19 +488,14 @@ const exportMatchedLogs = () => {
 }
 
 const exportMatchedCommandSet = async () => {
-  if (!logContent.value) {
-    ElMessage.warning('请先加载日志文件')
+  const exportItems = getExportCandidateTimelineItems()
+  if (!logContent.value || !exportItems) {
     return
   }
 
-  if (!filteredTimelineData.value.length) {
-    ElMessage.warning('当前没有可导出的命中记录')
-    return
-  }
-
-  const exportedBlocks = buildExportedMatchedBlocks(logContent.value, filteredTimelineData.value, exportKeepTimeLine.value)
+  const exportedBlocks = buildExportedMatchedBlocks(logContent.value, exportItems, exportKeepTimeLine.value)
   if (!exportedBlocks.length) {
-    ElMessage.warning('未能根据命中记录生成命令集')
+    ElMessage.warning('未能根据命中记录生成报文集')
     return
   }
 
@@ -478,10 +513,9 @@ const exportMatchedCommandSet = async () => {
     const now = new Date()
     const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
     downloadBlobFile(zipBlob, `timeline-command-set-${timestamp}.zip`)
-    ElMessage.success(`已导出 ${exportedBlocks.length} 条命令集报文压缩包`)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    ElMessage.error(`导出命令集失败: ${message}`)
+    ElMessage.success(`已导出 ${exportedBlocks.length} 条报文集报文压缩包`)
+  } catch (error: unknown) {
+    ElMessage.error(`导出报文集失败: ${getErrorMessage(error)}`)
   }
 }
 
@@ -493,6 +527,10 @@ const getScrollMarkerTop = (line: number) => {
   const ratio = Math.max(0, line - 1) / total
   // Prevent bottom marker from bleeding out by shifting it upwards proportionally
   return `calc(${ratio * 100}% - ${ratio * 3}px)`
+}
+
+const getErrorMessage = (error: unknown) => {
+  return error instanceof Error ? error.message : '未知错误'
 }
 
 // Handle Editor scroll geometries natively
@@ -514,8 +552,8 @@ const baseTheme = EditorView.theme({
 })
 
 // Dynamic line decorations builder
-const getHighlightExtension = (timeline: typeof timelineData.value, doc: any) => {
-  const builder: any[] = []
+const getHighlightExtension = (timeline: typeof timelineData.value, doc: Text) => {
+  const builder: Array<Range<Decoration>> = []
   timeline.forEach(item => {
     if (item.line <= doc.lines) {
       const lineData = doc.line(item.line)
@@ -529,7 +567,10 @@ const getHighlightExtension = (timeline: typeof timelineData.value, doc: any) =>
   })
 
   builder.sort((a, b) => a.from - b.from)
-  const uniqueBuilder = builder.filter((item, pos, ary) => !pos || item.from !== ary[pos - 1].from)
+  const uniqueBuilder = builder.filter((item, pos, ary) => {
+    const previous = ary[pos - 1]
+    return !previous || item.from !== previous.from
+  })
   return Decoration.set(uniqueBuilder, true)
 }
 
@@ -546,7 +587,7 @@ const extensions = [
   })
 ]
 
-const handleReady = (payload: any) => {
+const handleReady = (payload: { view: EditorView }) => {
   viewRef.value = payload.view
   if (payload.view && payload.view.state) {
     editorTotalLines.value = payload.view.state.doc.lines
@@ -586,8 +627,8 @@ const onFileSelected = async (e: Event) => {
       setTimeout(() => {
           applyRulesAndParse()
       }, 100)
-    } catch (err: any) {
-      ElMessage.error('读取文件失败: ' + err.message)
+    } catch (err: unknown) {
+      ElMessage.error('读取文件失败: ' + getErrorMessage(err))
       loading.value = false
     }
     // reset input so the same file could be selected again
@@ -611,8 +652,8 @@ const onJsonFileSelected = async (e: Event) => {
     if (data.sxfyRules) sxfyList.value = data.sxfyRules
     ElMessage.success('配置导入成功')
     if (logContent.value) applyRulesAndParse()
-  } catch (err: any) {
-    ElMessage.error('读取配置文件失败: ' + err.message)
+  } catch (err: unknown) {
+    ElMessage.error('读取配置文件失败: ' + getErrorMessage(err))
   }
   if (jsonFileInput.value) jsonFileInput.value.value = ''
 }
@@ -644,6 +685,8 @@ const clearAllData = () => {
     sxfyList.value = []
     logContent.value = null
     timelineData.value = []
+    selectedTimelineItemKeys.value = []
+    exportSelectedOnly.value = false
     filterSxFy.value = ''
     filterDesc.value = []
     if (fileInput.value) fileInput.value.value = ''
@@ -664,6 +707,7 @@ const applyRulesAndParse = () => {
   setTimeout(() => {
     try {
       timelineData.value = analyzeLogTimeline(currentLogContent, rulesList.value, sxfyList.value)
+      selectedTimelineItemKeys.value = []
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
       }
@@ -682,8 +726,8 @@ const applyRulesAndParse = () => {
           effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
         })
       }
-    } catch (err: any) {
-      ElMessage.error('分析过程中出错: ' + err.message)
+    } catch (err: unknown) {
+      ElMessage.error('分析过程中出错: ' + getErrorMessage(err))
     } finally {
       loading.value = false
     }
