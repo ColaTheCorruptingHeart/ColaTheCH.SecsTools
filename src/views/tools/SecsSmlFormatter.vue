@@ -56,7 +56,7 @@
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
           <span class="text-sm font-medium text-slate-600">格式化结果</span>
           <span class="text-xs text-slate-400 font-mono hidden sm:inline-block max-w-[200px] truncate" :title="selectedPath">
-            {{ selectedPath ? ('当前位置：' + selectedPath) : '点击值、<L 或 > 行查看路径' }}
+            {{ selectedPath ? ('当前位置：' + selectedPath) : '点击任意数据行或 > 行查看路径' }}
           </span>
         </div>
 
@@ -84,7 +84,7 @@
           </template>
         </div>
         <div class="bg-slate-50 border-t border-slate-200 px-4 py-1.5 flex items-center justify-between shrink-0">
-          <span class="text-xs text-slate-500">提示：点击可查看路径，双击可弹框并复制；也可输入路径直接定位。</span>
+          <span class="text-xs text-slate-500">提示：点击任意数据行或 > 行可查看路径，双击可弹框并复制；也可输入路径直接定位。</span>
         </div>
       </div>
     </div>
@@ -192,9 +192,7 @@ function buildFormattedResult(parsed: any) {
 
   function walk(node: any, depth: number, path: number[]) {
     const text = `${'    '.repeat(depth)}${node.text}`
-    const isValueLine = /'.*'/.test(node.text)
-    const isLLine = /^<L\b/.test(node.text)
-    const isClickable = isValueLine || isLLine
+    const isClickable = true
     const openLineIndex = lines.length
 
     lines.push({
