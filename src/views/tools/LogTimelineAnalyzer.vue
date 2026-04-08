@@ -117,64 +117,22 @@
       </div>
 
       <!-- Right: Timeline -->
-      <div class="lg:w-72 xl:w-80 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden h-72 lg:h-full">
-         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 font-medium text-sm flex flex-col text-slate-600 dark:text-slate-300 shrink-0">
-             <div class="p-2 px-4 flex justify-between items-center">
-                 <span>时间线</span>
-                 <el-tag size="small" type="info" round>找到 {{ filteredTimelineData.length }} 条记录</el-tag>
-             </div>
-             <div class="px-2 pb-2 flex gap-2">
-                 <el-select v-model="filterSxFy" size="small" placeholder="SxFy过滤" clearable class="flex-1">
-                     <el-option v-for="opt in availableSxFyOptions" :key="opt" :label="opt" :value="opt" />
-                 </el-select>
-                 <el-select v-model="filterDesc" size="small" placeholder="关键值过滤" clearable multiple collapse-tags collapse-tags-tooltip class="flex-1" :disabled="!filterSxFy">
-                     <el-option v-for="opt in availableDescOptions" :key="opt" :label="opt" :value="opt" />
-                 </el-select>
-             </div>
-         </div>
-         <div class="flex-1 overflow-auto p-4 custom-scrollbar">
-             <div v-if="filteredTimelineData.length" class="flex flex-col gap-2">
-                 <div
-                     v-for="(item, index) in filteredTimelineData"
-                     :key="index"
-                     class="cursor-pointer border-l-[3px] p-2 rounded-r transition-colors group flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-slate-700/50"
-                     :style="{ borderLeftColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
-                     @click="jumpToLine(item.line)"
-                 >
-                     <div class="flex justify-between items-center gap-2">
-                         <span class="text-[11px] text-slate-600 font-mono tracking-tight shrink-0">{{ item.time }}</span>
-                         <span
-                            class="text-[10px] px-1.5 py-0.5 rounded font-mono truncate border"
-                            :style="{
-                              color: getMarkerColor(item.ceid, item.type, item.ruleId),
-                              backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '20',
-                              borderColor: getMarkerColor(item.ceid, item.type, item.ruleId) + '40'
-                            }"
-                         >{{ item.type === 'CEID' ? 'CEID' : 'SxFy' }}: {{ item.ceid }}</span>
-                     </div>
-                     <div class="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:opacity-80 leading-tight">
-                         {{ item.desc }}
-                     </div>
-                 </div>
-             </div>
-             <el-empty v-else description="暂无符合规则的数据" :image-size="60" />
-         </div>
-         <div class="p-2 border-t border-slate-200 dark:border-slate-700 flex-none flex flex-col gap-2 bg-slate-50 dark:bg-slate-900/50">
-            <div class="flex items-center">
-              <el-checkbox v-model="exportKeepTimeLine" size="small">保留时间行</el-checkbox>
-            </div>
-            <div class="flex gap-2">
-              <el-button class="flex-1 !ml-0" size="small" type="primary" :disabled="!filteredTimelineData.length || !logContent" @click="exportMatchedLogs">
-                <el-icon class="mr-1"><Download /></el-icon>
-                导出命中报文
-              </el-button>
-              <el-button class="flex-1 !ml-0" size="small" plain :disabled="!filteredTimelineData.length || !logContent" @click="exportMatchedCommandSet">
-                <el-icon class="mr-1"><Download /></el-icon>
-                导出命令集
-              </el-button>
-            </div>
-         </div>
-      </div>
+      <TimelinePanel
+        :items="filteredTimelineData"
+        :filter-sx-fy="filterSxFy"
+        :filter-desc="filterDesc"
+        :available-sx-fy-options="availableSxFyOptions"
+        :available-desc-options="availableDescOptions"
+        :export-keep-time-line="exportKeepTimeLine"
+        :can-export="Boolean(filteredTimelineData.length && logContent)"
+        :get-marker-color="getMarkerColor"
+        @update:filterSxFy="filterSxFy = $event"
+        @update:filterDesc="filterDesc = $event"
+        @update:exportKeepTimeLine="exportKeepTimeLine = $event"
+        @jump="jumpToLine"
+        @exportLogs="exportMatchedLogs"
+        @exportCommandSet="exportMatchedCommandSet"
+      />
     </div>
 
     <!-- Rule Import Dialog -->
@@ -227,7 +185,7 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch } from 'vue'
-import { Calendar, Delete, Download, Edit } from '@element-plus/icons-vue'
+import { Calendar, Delete, Edit } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Codemirror } from 'vue-codemirror'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
@@ -236,6 +194,7 @@ import JSZip from 'jszip'
 import { analyzeLogTimeline } from './log-timeline/parser'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import type { RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
 
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -300,56 +259,53 @@ const availableDescOptions = computed(() => {
     if (!filterSxFy.value) return []
     const descSet = new Set<string>()
     timelineData.value.forEach(item => {
-        let isMatch = false
-        if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
-            isMatch = true
-        } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
-            isMatch = true
-        }
-        if (isMatch && item.desc) {
-            descSet.add(item.desc)
-        }
-    })
-    return Array.from(descSet).sort()
+    let isMatch = false
+    if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
+      isMatch = true
+    } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
+      isMatch = true
+    }
+    if (isMatch && item.desc) {
+      descSet.add(item.desc)
+    }
+  })
+  return Array.from(descSet).sort()
 })
 
 const filteredTimelineData = computed(() => {
-    return timelineData.value.filter(item => {
-        if (filterSxFy.value) {
-            let isMatch = false
-            if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
-                isMatch = true
-            } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
-                isMatch = true
-            }
-            if (!isMatch) return false
-            if (filterDesc.value.length > 0 && !filterDesc.value.includes(item.desc)) return false
-        }
-        return true
-    })
+  return timelineData.value.filter(item => {
+    if (filterSxFy.value) {
+      let isMatch = false
+      if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
+        isMatch = true
+      } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
+        isMatch = true
+      }
+      if (!isMatch) return false
+      if (filterDesc.value.length > 0 && !filterDesc.value.includes(item.desc)) return false
+    }
+    return true
+  })
 })
 
 watch([filterSxFy, filterDesc], ([newSxFy], [oldSxFy]) => {
-    // 避免无限递归
-    if (newSxFy !== oldSxFy) {
-        if (newSxFy) {
-            const newArr = filterDesc.value.filter(desc => availableDescOptions.value.includes(desc))
-            if (newArr.length !== filterDesc.value.length) {
-                filterDesc.value = newArr
-            }
-        } else {
-            if (filterDesc.value.length > 0) {
-                filterDesc.value = []
-            }
-        }
+  if (newSxFy !== oldSxFy) {
+    if (newSxFy) {
+      const newArr = filterDesc.value.filter(desc => availableDescOptions.value.includes(desc))
+      if (newArr.length !== filterDesc.value.length) {
+        filterDesc.value = newArr
+      }
+    } else if (filterDesc.value.length > 0) {
+      filterDesc.value = []
     }
-    updateHighlights()
+  }
+  updateHighlights()
 }, { deep: true })
 
 const getRandomDistinctColor = () => {
   const h = Math.floor(Math.random() * 360)
-  const s = Math.floor(Math.random() * 40 + 60) // 60-100%
-  const l = Math.floor(Math.random() * 20 + 40) // 40-60%
+  const s = Math.floor(Math.random() * 40 + 60)
+  const l = Math.floor(Math.random() * 20 + 40)
 
   const c = (1 - Math.abs(2 * l / 100 - 1)) * (s / 100)
   const x = c * (1 - Math.abs((h / 60) % 2 - 1))
