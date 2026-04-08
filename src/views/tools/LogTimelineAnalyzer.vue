@@ -163,10 +163,16 @@
             <div class="flex items-center">
               <el-checkbox v-model="exportKeepTimeLine" size="small">保留时间行</el-checkbox>
             </div>
-            <el-button class="w-full !ml-0" size="small" type="primary" :disabled="!filteredTimelineData.length || !logContent" @click="exportMatchedLogs">
-              <el-icon class="mr-1"><Download /></el-icon>
-              导出命中报文
-            </el-button>
+            <div class="flex gap-2">
+              <el-button class="flex-1 !ml-0" size="small" type="primary" :disabled="!filteredTimelineData.length || !logContent" @click="exportMatchedLogs">
+                <el-icon class="mr-1"><Download /></el-icon>
+                导出命中报文
+              </el-button>
+              <el-button class="flex-1 !ml-0" size="small" plain :disabled="!filteredTimelineData.length || !logContent" @click="exportMatchedCommandSet">
+                <el-icon class="mr-1"><Download /></el-icon>
+                导出命令集
+              </el-button>
+            </div>
          </div>
       </div>
     </div>
@@ -226,6 +232,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Codemirror } from 'vue-codemirror'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState } from '@codemirror/state'
+import JSZip from 'jszip'
 
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -264,6 +271,16 @@ interface LogMessageBlock {
   startLine: number
   contentStartLine: number
   endLine: number
+}
+
+interface ExportedMatchedBlock {
+  uniqueKey: number
+  block: LogMessageBlock
+  items: TimelineItem[]
+  sxFy: string
+  desc: string
+  ceid: string
+  text: string
 }
 
 const rulesList = ref<RuleItem[]>([])
@@ -589,8 +606,7 @@ const findBlockByLine = (blocks: LogMessageBlock[], lineNumber: number) => {
   return null
 }
 
-const downloadTextFile = (content: string, fileName: string) => {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+const downloadBlobFile = (blob: Blob, fileName: string) => {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
@@ -599,6 +615,10 @@ const downloadTextFile = (content: string, fileName: string) => {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(url)
+}
+
+const downloadTextFile = (content: string, fileName: string) => {
+  downloadBlobFile(new Blob([content], { type: 'text/plain;charset=utf-8' }), fileName)
 }
 
 const normalizeExportIndentation = (line: string) => {
@@ -616,6 +636,112 @@ const normalizeExportIndentation = (line: string) => {
   return `${'  '.repeat(indentLevel)}${trimmed}`
 }
 
+const extractSxFyName = (item: TimelineItem) => {
+  if (item.type === 'CEID') {
+    return 'S6F11'
+  }
+
+  const match = item.ceid.match(/S\d+F\d+/)
+  return match?.[0] || 'UnknownSxFy'
+}
+
+const normalizeFileNameSegment = (value: string, fallback: string) => {
+  const normalized = value
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[.-]+|[.-]+$/g, '')
+    .trim()
+
+  return normalized || fallback
+}
+
+const buildExportedMatchedBlocks = () => {
+  if (!logContent.value) {
+    return [] as ExportedMatchedBlock[]
+  }
+
+  const lines = splitLogLines(logContent.value)
+  const blocks = buildLogMessageBlocks(lines)
+  const blockMap = new Map<number, { block: LogMessageBlock, items: TimelineItem[] }>()
+
+  filteredTimelineData.value.forEach(item => {
+    const block = findBlockByLine(blocks, item.line)
+    if (!block) {
+      return
+    }
+
+    const uniqueKey = block.contentStartLine
+    const existing = blockMap.get(uniqueKey)
+    if (existing) {
+      existing.items.push(item)
+      return
+    }
+
+    blockMap.set(uniqueKey, {
+      block,
+      items: [item]
+    })
+  })
+
+  const exportedBlocks: ExportedMatchedBlock[] = []
+
+  blockMap.forEach(({ block, items }, uniqueKey) => {
+    const namingItem = items.find(item => item.type === 'CEID') || items[0]
+    if (!namingItem) {
+      return
+    }
+
+    const exportStartLine = exportKeepTimeLine.value ? block.startLine : block.contentStartLine
+    const text = lines
+      .slice(exportStartLine - 1, block.endLine)
+      .map(normalizeExportIndentation)
+      .join('\n')
+      .trimEnd()
+
+    if (!text) {
+      return
+    }
+
+    const ceidItem = items.find(item => item.type === 'CEID')
+    exportedBlocks.push({
+      uniqueKey,
+      block,
+      items,
+      sxFy: extractSxFyName(namingItem),
+      desc: namingItem.desc,
+      ceid: ceidItem?.ceid || '',
+      text
+    })
+  })
+
+  return exportedBlocks
+}
+
+const buildCommandFileBaseName = (block: ExportedMatchedBlock) => {
+  const segments = [
+    normalizeFileNameSegment(block.sxFy, 'UnknownSxFy'),
+    normalizeFileNameSegment(block.desc, '未命名')
+  ]
+
+  if (block.ceid) {
+    segments.push(normalizeFileNameSegment(block.ceid, 'CEID'))
+  }
+
+  return segments.join('_')
+}
+
+const buildUniqueFileName = (baseName: string, nameCounter: Map<string, number>) => {
+  const currentCount = nameCounter.get(baseName) || 0
+  nameCounter.set(baseName, currentCount + 1)
+
+  if (currentCount === 0) {
+    return `${baseName}.txt`
+  }
+
+  return `${baseName}_${String(currentCount).padStart(3, '0')}.txt`
+}
+
 const exportMatchedLogs = () => {
   if (!logContent.value) {
     ElMessage.warning('请先加载日志文件')
@@ -627,33 +753,7 @@ const exportMatchedLogs = () => {
     return
   }
 
-  const lines = splitLogLines(logContent.value)
-  const blocks = buildLogMessageBlocks(lines)
-  const exportedBlocks: string[] = []
-  const seenBlockKeys = new Set<number>()
-
-  filteredTimelineData.value.forEach(item => {
-    const block = findBlockByLine(blocks, item.line)
-    if (!block) {
-      return
-    }
-
-    const uniqueKey = block.contentStartLine
-    if (seenBlockKeys.has(uniqueKey)) {
-      return
-    }
-
-    seenBlockKeys.add(uniqueKey)
-    const exportStartLine = exportKeepTimeLine.value ? block.startLine : block.contentStartLine
-    const blockText = lines
-      .slice(exportStartLine - 1, block.endLine)
-      .map(normalizeExportIndentation)
-      .join('\n')
-      .trimEnd()
-    if (blockText) {
-      exportedBlocks.push(blockText)
-    }
-  })
+  const exportedBlocks = buildExportedMatchedBlocks()
 
   if (!exportedBlocks.length) {
     ElMessage.warning('未能根据命中记录定位到完整报文')
@@ -662,8 +762,46 @@ const exportMatchedLogs = () => {
 
   const now = new Date()
   const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
-  downloadTextFile(`${exportedBlocks.join('\n\n')}\n`, `timeline-hits-${timestamp}.log`)
+  downloadTextFile(`${exportedBlocks.map(block => block.text).join('\n\n')}\n`, `timeline-hits-${timestamp}.log`)
   ElMessage.success(`已导出 ${exportedBlocks.length} 条去重后的完整报文`)
+}
+
+const exportMatchedCommandSet = async () => {
+  if (!logContent.value) {
+    ElMessage.warning('请先加载日志文件')
+    return
+  }
+
+  if (!filteredTimelineData.value.length) {
+    ElMessage.warning('当前没有可导出的命中记录')
+    return
+  }
+
+  const exportedBlocks = buildExportedMatchedBlocks()
+  if (!exportedBlocks.length) {
+    ElMessage.warning('未能根据命中记录生成命令集')
+    return
+  }
+
+  const zip = new JSZip()
+  const nameCounter = new Map<string, number>()
+
+  exportedBlocks.forEach(block => {
+    const baseName = buildCommandFileBaseName(block)
+    const fileName = buildUniqueFileName(baseName, nameCounter)
+    zip.file(fileName, `${block.text}\n`)
+  })
+
+  try {
+    const zipBlob = await zip.generateAsync({ type: 'blob' })
+    const now = new Date()
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
+    downloadBlobFile(zipBlob, `timeline-command-set-${timestamp}.zip`)
+    ElMessage.success(`已导出 ${exportedBlocks.length} 条命令集报文压缩包`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    ElMessage.error(`导出命令集失败: ${message}`)
+  }
 }
 
 // Scrollbar calculations
