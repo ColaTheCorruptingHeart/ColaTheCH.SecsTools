@@ -1,0 +1,41 @@
+export interface RuleItem {
+  ceid: string
+  desc: string
+  color: string
+  enabled?: boolean
+}
+
+export interface SxFyRuleItem {
+  id: string
+  s: number
+  f: number
+  color: string
+  enabled?: boolean
+  keyPos?: string
+  desc?: string
+}
+
+export interface TimelineItem {
+  time: string
+  ceid: string
+  ruleId?: string
+  desc: string
+  line: number
+  type?: 'CEID' | 'SxFy'
+}
+
+export interface LogMessageBlock {
+  startLine: number
+  contentStartLine: number
+  endLine: number
+}
+
+export interface ExportedMatchedBlock {
+  uniqueKey: number
+  block: LogMessageBlock
+  items: TimelineItem[]
+  sxFy: string
+  desc: string
+  ceid: string
+  text: string
+}

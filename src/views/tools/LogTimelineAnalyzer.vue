@@ -233,6 +233,9 @@ import { Codemirror } from 'vue-codemirror'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState } from '@codemirror/state'
 import JSZip from 'jszip'
+import { analyzeLogTimeline } from './log-timeline/parser'
+import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
+import type { RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -240,48 +243,6 @@ const jsonFileInput = ref<HTMLInputElement | null>(null)
 
 const importDialogVisible = ref(false)
 const importText = ref('')
-
-interface RuleItem {
-  ceid: string
-  desc: string
-  color: string
-  enabled?: boolean
-}
-
-interface SxFyRuleItem {
-  id: string
-  s: number
-  f: number
-  color: string
-  enabled?: boolean
-  keyPos?: string
-  desc?: string
-}
-
-interface TimelineItem {
-  time: string
-  ceid: string
-  ruleId?: string
-  desc: string
-  line: number
-  type?: 'CEID' | 'SxFy'
-}
-
-interface LogMessageBlock {
-  startLine: number
-  contentStartLine: number
-  endLine: number
-}
-
-interface ExportedMatchedBlock {
-  uniqueKey: number
-  block: LogMessageBlock
-  items: TimelineItem[]
-  sxFy: string
-  desc: string
-  ceid: string
-  text: string
-}
 
 const rulesList = ref<RuleItem[]>([])
 const sxfyList = ref<SxFyRuleItem[]>([
@@ -321,12 +282,6 @@ const getMarkerColor = (id: string, type: 'CEID' | 'SxFy' = 'CEID', ruleId?: str
 
 const filterSxFy = ref<string>('')
 const filterDesc = ref<string[]>([])
-
-const matchHeaderLine = (lineTrim: string) => lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S\d+F\d+)/i)
-const matchStandaloneSfLine = (lineTrim: string) => lineTrim.match(/^(S\d+F\d+)(?:\s+W)?$/i)
-const matchTimePrefixLine = (lineTrim: string) => lineTrim.match(/^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/)
-
-const splitLogLines = (content: string) => content.split(/\r?\n/)
 
 const availableSxFyOptions = computed(() => {
     const sxfySet = new Set<string>()
@@ -374,7 +329,7 @@ const filteredTimelineData = computed(() => {
     })
 })
 
-watch([filterSxFy, filterDesc], ([newSxFy, newDesc], [oldSxFy, oldDesc]) => {
+watch([filterSxFy, filterDesc], ([newSxFy], [oldSxFy]) => {
     // 避免无限递归
     if (newSxFy !== oldSxFy) {
         if (newSxFy) {
@@ -537,75 +492,6 @@ const updateHighlights = () => {
   })
 }
 
-const buildLogMessageBlocks = (lines: string[]) => {
-  const blocks: LogMessageBlock[] = []
-  let currentStartLine = -1
-  let currentContentStartLine = -1
-  let pendingTimeLine = -1
-
-  const finalizeCurrentBlock = (endLine: number) => {
-    if (currentStartLine === -1 || currentContentStartLine === -1 || endLine < currentContentStartLine) {
-      return
-    }
-
-    blocks.push({
-      startLine: currentStartLine,
-      contentStartLine: currentContentStartLine,
-      endLine
-    })
-  }
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const lineTrim = lines[index]?.trim() || ''
-    if (!lineTrim) {
-      continue
-    }
-
-    const currentLineNumber = index + 1
-    const headerMatch = matchHeaderLine(lineTrim)
-    if (headerMatch) {
-      finalizeCurrentBlock(index)
-      currentStartLine = currentLineNumber
-      currentContentStartLine = currentLineNumber
-      pendingTimeLine = -1
-      continue
-    }
-
-    const timePrefixMatch = matchTimePrefixLine(lineTrim)
-    if (timePrefixMatch) {
-      finalizeCurrentBlock(index)
-      currentStartLine = -1
-      currentContentStartLine = -1
-      pendingTimeLine = currentLineNumber
-      continue
-    }
-
-    const sfMatch = matchStandaloneSfLine(lineTrim)
-    if (sfMatch) {
-      if (pendingTimeLine !== -1) {
-        currentStartLine = pendingTimeLine
-        currentContentStartLine = currentLineNumber
-        pendingTimeLine = -1
-      } else if (currentContentStartLine === -1) {
-        currentStartLine = currentLineNumber
-        currentContentStartLine = currentLineNumber
-      }
-    }
-  }
-
-  finalizeCurrentBlock(lines.length)
-  return blocks
-}
-
-const findBlockByLine = (blocks: LogMessageBlock[], lineNumber: number) => {
-  for (const block of blocks) {
-    if (lineNumber >= block.contentStartLine && lineNumber <= block.endLine) {
-      return block
-    }
-  }
-  return null
-}
-
 const downloadBlobFile = (blob: Blob, fileName: string) => {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -621,127 +507,6 @@ const downloadTextFile = (content: string, fileName: string) => {
   downloadBlobFile(new Blob([content], { type: 'text/plain;charset=utf-8' }), fileName)
 }
 
-const normalizeExportIndentation = (line: string) => {
-  const trimmedRight = line.replace(/\s+$/, '')
-  const trimmed = trimmedRight.trimStart()
-
-  if (!trimmed || (trimmed[0] !== '<' && trimmed[0] !== '>')) {
-    return trimmedRight
-  }
-
-  const leadingWhitespace = trimmedRight.slice(0, trimmedRight.length - trimmed.length)
-  const visualIndentWidth = leadingWhitespace.replace(/\t/g, '    ').length
-  const indentLevel = visualIndentWidth > 0 ? Math.max(1, Math.round(visualIndentWidth / 4)) : 0
-
-  return `${'  '.repeat(indentLevel)}${trimmed}`
-}
-
-const extractSxFyName = (item: TimelineItem) => {
-  if (item.type === 'CEID') {
-    return 'S6F11'
-  }
-
-  const match = item.ceid.match(/S\d+F\d+/)
-  return match?.[0] || 'UnknownSxFy'
-}
-
-const normalizeFileNameSegment = (value: string, fallback: string) => {
-  const normalized = value
-    .replace(/[\\/:*?"<>|]/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^[.-]+|[.-]+$/g, '')
-    .trim()
-
-  return normalized || fallback
-}
-
-const buildExportedMatchedBlocks = () => {
-  if (!logContent.value) {
-    return [] as ExportedMatchedBlock[]
-  }
-
-  const lines = splitLogLines(logContent.value)
-  const blocks = buildLogMessageBlocks(lines)
-  const blockMap = new Map<number, { block: LogMessageBlock, items: TimelineItem[] }>()
-
-  filteredTimelineData.value.forEach(item => {
-    const block = findBlockByLine(blocks, item.line)
-    if (!block) {
-      return
-    }
-
-    const uniqueKey = block.contentStartLine
-    const existing = blockMap.get(uniqueKey)
-    if (existing) {
-      existing.items.push(item)
-      return
-    }
-
-    blockMap.set(uniqueKey, {
-      block,
-      items: [item]
-    })
-  })
-
-  const exportedBlocks: ExportedMatchedBlock[] = []
-
-  blockMap.forEach(({ block, items }, uniqueKey) => {
-    const namingItem = items.find(item => item.type === 'CEID') || items[0]
-    if (!namingItem) {
-      return
-    }
-
-    const exportStartLine = exportKeepTimeLine.value ? block.startLine : block.contentStartLine
-    const text = lines
-      .slice(exportStartLine - 1, block.endLine)
-      .map(normalizeExportIndentation)
-      .join('\n')
-      .trimEnd()
-
-    if (!text) {
-      return
-    }
-
-    const ceidItem = items.find(item => item.type === 'CEID')
-    exportedBlocks.push({
-      uniqueKey,
-      block,
-      items,
-      sxFy: extractSxFyName(namingItem),
-      desc: namingItem.desc,
-      ceid: ceidItem?.ceid || '',
-      text
-    })
-  })
-
-  return exportedBlocks
-}
-
-const buildCommandFileBaseName = (block: ExportedMatchedBlock) => {
-  const segments = [
-    normalizeFileNameSegment(block.sxFy, 'UnknownSxFy'),
-    normalizeFileNameSegment(block.desc, '未命名')
-  ]
-
-  if (block.ceid) {
-    segments.push(normalizeFileNameSegment(block.ceid, 'CEID'))
-  }
-
-  return segments.join('_')
-}
-
-const buildUniqueFileName = (baseName: string, nameCounter: Map<string, number>) => {
-  const currentCount = nameCounter.get(baseName) || 0
-  nameCounter.set(baseName, currentCount + 1)
-
-  if (currentCount === 0) {
-    return `${baseName}.txt`
-  }
-
-  return `${baseName}_${String(currentCount).padStart(3, '0')}.txt`
-}
-
 const exportMatchedLogs = () => {
   if (!logContent.value) {
     ElMessage.warning('请先加载日志文件')
@@ -753,7 +518,7 @@ const exportMatchedLogs = () => {
     return
   }
 
-  const exportedBlocks = buildExportedMatchedBlocks()
+  const exportedBlocks = buildExportedMatchedBlocks(logContent.value, filteredTimelineData.value, exportKeepTimeLine.value)
 
   if (!exportedBlocks.length) {
     ElMessage.warning('未能根据命中记录定位到完整报文')
@@ -777,7 +542,7 @@ const exportMatchedCommandSet = async () => {
     return
   }
 
-  const exportedBlocks = buildExportedMatchedBlocks()
+  const exportedBlocks = buildExportedMatchedBlocks(logContent.value, filteredTimelineData.value, exportKeepTimeLine.value)
   if (!exportedBlocks.length) {
     ElMessage.warning('未能根据命中记录生成命令集')
     return
@@ -977,170 +742,12 @@ const clearAllData = () => {
 
 const applyRulesAndParse = () => {
   if (!logContent.value) return
+  const currentLogContent = logContent.value
   loading.value = true
 
   setTimeout(() => {
     try {
-      const ruleMap = new Map<string, string>()
-      rulesList.value.forEach(rule => {
-          if (rule.enabled !== false) {
-              ruleMap.set(rule.ceid, rule.desc)
-          }
-      })
-
-      const lines = splitLogLines(logContent.value || '')
-      const timeline: typeof timelineData.value = []
-
-      let s6f11BlockLine = -1
-      let s6f11Time = ''
-      let currentPath: number[] = []
-
-      let activeSxFyRules: SxFyRuleItem[] = []
-      let sxFyBlockTime = ''
-
-      let pendingTime = ''
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        if (typeof line !== 'string') continue
-
-        const lineTrim = line.trim()
-        if (!lineTrim) continue
-
-        // Fast path: avoid regex on data payload lines (huge performance boost)
-        const firstChar = lineTrim[0];
-        if (firstChar === '<' || firstChar === '>') {
-          if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
-            if (lineTrim.startsWith('<L')) {
-              if (currentPath.length === 0) {
-                  currentPath.push(0)
-              } else {
-                  currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
-              }
-              currentPath.push(-1)
-            } else if (lineTrim.startsWith('>')) {
-              currentPath.pop()
-              if (currentPath.length <= 1) {
-                  s6f11BlockLine = -1
-                  activeSxFyRules = []
-                  currentPath = []
-              }
-            } else if (lineTrim.startsWith('<')) {
-              // Note: Data item
-              if (currentPath.length === 0) {
-                  currentPath.push(0)
-              } else {
-                  currentPath[currentPath.length - 1] = (currentPath[currentPath.length - 1] || 0) + 1
-              }
-              const currentPathStr = '[' + currentPath.join('][') + ']'
-
-              // Reusable value extractor
-              let valStr = ''
-              const qsMatch = lineTrim.match(/['"](.*?)['"]/);
-              if (qsMatch && qsMatch[1] !== undefined) {
-                  valStr = qsMatch[1]
-              } else {
-                  const typeMatcher = lineTrim.match(/<[^>\s]+\s+(?:\[.*?\]\s+)?(.*?)>/)
-                  if (typeMatcher && typeMatcher[1] !== undefined) {
-                      valStr = typeMatcher[1].trim()
-                  } else {
-                       valStr = lineTrim.replace(/<|>/g, '').trim()
-                  }
-              }
-
-              // CEID S6F11 Check
-              if (s6f11BlockLine !== -1 && currentPathStr === '[0][1]') {
-                  if (ruleMap.has(valStr)) {
-                      timeline.push({
-                          time: s6f11Time,
-                          ceid: valStr,
-                          type: 'CEID',
-                          desc: ruleMap.get(valStr)!,
-                          line: i + 1
-                      })
-                  }
-              }
-
-              // SxFy Pos Check
-              if (activeSxFyRules.length > 0) {
-                  activeSxFyRules.forEach(rule => {
-                      if (rule.keyPos && rule.keyPos === currentPathStr) {
-                          timeline.push({
-                              time: sxFyBlockTime,
-                              ceid: `S${rule.s}F${rule.f} ${rule.keyPos}`,
-                              ruleId: rule.id,
-                              type: 'SxFy',
-                              desc: rule.desc ? `${rule.desc}: ${valStr}` : `值: ${valStr}`,
-                              line: i + 1
-                          })
-                      }
-                  })
-              }
-            }
-          }
-          continue;
-        }
-
-        // Quick check for different header patterns
-        const headerMatchOld = matchHeaderLine(lineTrim)
-        const sfMatchOnly = matchStandaloneSfLine(lineTrim)
-        const timePrefixMatch = matchTimePrefixLine(lineTrim)
-
-        let time = ''
-        let sfName = ''
-
-        if (headerMatchOld && headerMatchOld[1] && headerMatchOld[2]) {
-          time = headerMatchOld[1]
-          sfName = headerMatchOld[2].toUpperCase() // "S6F11"
-          pendingTime = ''
-        } else if (sfMatchOnly && sfMatchOnly[1] && pendingTime) {
-          time = pendingTime
-          sfName = sfMatchOnly[1].toUpperCase()
-          pendingTime = ''
-        } else if (timePrefixMatch && timePrefixMatch[1]) {
-          pendingTime = timePrefixMatch[1]
-          // If we hit another time marker, reset block structure
-          if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
-            s6f11BlockLine = -1
-            activeSxFyRules = []
-            currentPath = []
-          }
-          continue
-        }
-
-        if (time && sfName) {
-          // If there's an ongoing block, reset
-          currentPath = []
-
-          activeSxFyRules = sxfyList.value.filter(r => r.enabled !== false && `S${r.s}F${r.f}` === sfName)
-
-          if (sfName === 'S6F11') {
-            s6f11BlockLine = i + 1
-            s6f11Time = time
-          } else {
-            s6f11BlockLine = -1
-          }
-
-          if (activeSxFyRules.length > 0) {
-            sxFyBlockTime = time
-            activeSxFyRules.forEach(rule => {
-                if (!rule.keyPos) {
-                    timeline.push({
-                        time: time,
-                        ceid: sfName,
-                        ruleId: rule.id,
-                        type: 'SxFy',
-                        desc: rule.desc || `匹配到 ${sfName} 消息`,
-                        line: i + 1
-                    })
-                }
-            })
-          }
-          continue
-        }
-      }
-
-      timelineData.value = timeline
+      timelineData.value = analyzeLogTimeline(currentLogContent, rulesList.value, sxfyList.value)
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
       }
