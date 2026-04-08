@@ -109,7 +109,7 @@
           :autofocus="true"
           :indent-with-tab="true"
           :tab-size="2"
-          :extensions="getExtensions(block.language)"
+          :extensions="getExtensions(block)"
           @change="saveState"
         />
       </div>
@@ -164,6 +164,7 @@ interface NoteBlock {
 const STORAGE_KEY = 'secstools_scratchpad_blocks'
 
 const blocks = ref<NoteBlock[]>([])
+const composingBlockIds = new Set<string>()
 
 // Drag and drop state
 const dragEnabledIndex = ref<number | null>(null)
@@ -221,11 +222,32 @@ const customTheme = EditorView.theme({
   }
 })
 
-const getExtensions = (lang: string) => {
+const onCompositionStart = (blockId: string) => {
+  composingBlockIds.add(blockId)
+}
+
+const onCompositionEnd = (blockId: string) => {
+  window.setTimeout(() => {
+    composingBlockIds.delete(blockId)
+    saveState()
+  }, 0)
+}
+
+const getExtensions = (block: NoteBlock) => {
   const exts = [
-    customTheme
+    customTheme,
+    EditorView.domEventHandlers({
+      compositionstart() {
+        onCompositionStart(block.id)
+        return false
+      },
+      compositionend() {
+        onCompositionEnd(block.id)
+        return false
+      }
+    })
   ]
-  switch (lang) {
+  switch (block.language) {
     case 'json': exts.push(json()); break
     case 'javascript': exts.push(javascript()); break
     case 'html': exts.push(html()); break
@@ -289,6 +311,10 @@ const clearAll = () => {
 }
 
 const saveState = () => {
+  if (composingBlockIds.size > 0) {
+    return
+  }
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(blocks.value))
 }
 
