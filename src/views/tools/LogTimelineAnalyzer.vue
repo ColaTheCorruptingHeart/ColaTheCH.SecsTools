@@ -22,67 +22,23 @@
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
-      <!-- Left: Rules -->
-      <div class="lg:w-64 xl:w-72 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-[500px] lg:h-full overflow-hidden">
-         <!-- CEID Rules -->
-         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 font-medium text-sm flex justify-between items-center text-slate-600 dark:text-slate-300 flex-none">
-             <span>CEID匹配规则</span>
-             <el-button size="small" type="primary" plain @click="importDialogVisible = true">导入</el-button>
-         </div>
-         <div class="flex-1 overflow-auto p-2 custom-scrollbar border-b border-slate-200 dark:border-slate-700 min-h-0">
-             <div v-if="rulesList.length > 0" class="flex flex-col gap-2">
-                 <div v-for="(rule, index) in rulesList" :key="index" class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded border border-slate-200 dark:border-slate-700 transition-opacity" :class="{ 'opacity-40': rule.enabled === false }">
-                     <el-checkbox v-model="rule.enabled" size="small" @change="applyRulesAndParse" style="margin-right: 0;" />
-                     <el-color-picker v-model="rule.color" size="small" @change="updateHighlights" :disabled="rule.enabled === false" :predefine="predefineColors" />
-                     <div class="flex-1 min-w-0 flex items-baseline gap-1.5 overflow-hidden">
-                         <div class="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-200 shrink-0">{{ rule.ceid }}</div>
-                         <div class="text-[10px] text-slate-500 dark:text-slate-400 truncate" :title="rule.desc">{{ rule.desc }}</div>
-                     </div>
-                     <el-button type="danger" link @click="removeRule(index)" class="!p-1">
-                         <el-icon><Delete /></el-icon>
-                     </el-button>
-                 </div>
-             </div>
-             <el-empty v-else description="暂无规则" :image-size="40" />
-         </div>
-
-         <!-- SxFy Rules -->
-         <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 font-medium text-sm flex justify-between items-center text-slate-600 dark:text-slate-300 flex-none">
-             <span>SxFy匹配规则</span>
-             <el-button size="small" type="primary" plain @click="openSxFyDialog()">添加</el-button>
-         </div>
-         <div class="flex-1 overflow-auto p-2 custom-scrollbar min-h-0">
-             <div v-if="sxfyList.length > 0" class="flex flex-col gap-2">
-                 <div v-for="(rule, index) in sxfyList" :key="rule.id" class="flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 p-1.5 rounded border border-slate-200 dark:border-slate-700 transition-opacity" :class="{ 'opacity-40': rule.enabled === false }">
-                     <el-checkbox v-model="rule.enabled" size="small" @change="applyRulesAndParse" style="margin-right: 0;" />
-                     <el-color-picker v-model="rule.color" size="small" @change="updateHighlights" :disabled="rule.enabled === false" :predefine="predefineColors" />
-                     <div class="flex-1 min-w-0 flex flex-col justify-center overflow-hidden">
-                         <div class="text-[11px] font-mono font-bold text-slate-700 dark:text-slate-200 shrink-0">S{{ rule.s }}F{{ rule.f }}</div>
-                         <div class="text-[9px] text-slate-500 dark:text-slate-400 truncate" :title="rule.keyPos ? `位置: ${rule.keyPos}` : '任意位置'">{{ rule.keyPos ? `[Pos: ${rule.keyPos}]` : '' }} {{ rule.desc }}</div>
-                     </div>
-                     <el-button type="primary" link @click="openSxFyDialog(rule)" class="!p-1">
-                         <el-icon><Edit /></el-icon>
-                     </el-button>
-                     <el-button type="danger" link @click="removeSxFyRule(index)" class="!p-1">
-                         <el-icon><Delete /></el-icon>
-                     </el-button>
-                 </div>
-             </div>
-             <el-empty v-else description="暂无SxFy规则" :image-size="40" />
-         </div>
-
-         <!-- Action -->
-         <div class="p-2 border-t border-slate-200 dark:border-slate-700 flex-none flex flex-col gap-2 bg-slate-50 dark:bg-slate-900/50">
-            <div class="flex gap-2">
-                <el-button class="flex-1 !ml-0" size="small" @click="triggerJsonImport">导入规则</el-button>
-                <el-button class="flex-1 !ml-0" size="small" @click="exportJsonConfig">导出规则</el-button>
-            </div>
-            <div class="flex gap-2">
-                <el-button class="w-full" size="small" type="primary" @click="applyRulesAndParse" :disabled="!logContent">重新分析全记录</el-button>
-            </div>
-            <input type="file" ref="jsonFileInput" class="hidden" accept=".json" @change="onJsonFileSelected" />
-         </div>
-      </div>
+        <!-- Left: Rules -->
+        <RulesPanel
+        :rules-list="rulesList"
+        :sxfy-list="sxfyList"
+        :predefine-colors="predefineColors"
+        :has-log-content="Boolean(logContent)"
+        @openCeidImport="importDialogVisible = true"
+        @openSxFyAdd="openSxFyDialog()"
+        @openSxFyEdit="openSxFyDialog($event)"
+        @removeRule="removeRule"
+        @removeSxFyRule="removeSxFyRule"
+        @triggerJsonImport="triggerJsonImport"
+        @exportJsonConfig="exportJsonConfig"
+        @rulesChanged="applyRulesAndParse"
+        @highlightChanged="updateHighlights"
+        />
+        <input type="file" ref="jsonFileInput" class="hidden" accept=".json" @change="onJsonFileSelected" />
 
       <!-- Middle: CodeMirror Log Viewer -->
       <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
@@ -185,7 +141,7 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch } from 'vue'
-import { Calendar, Delete, Edit } from '@element-plus/icons-vue'
+import { Calendar } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Codemirror } from 'vue-codemirror'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
@@ -194,6 +150,7 @@ import JSZip from 'jszip'
 import { analyzeLogTimeline } from './log-timeline/parser'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import type { RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import RulesPanel from './log-timeline/components/RulesPanel.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
 
 const loading = ref(false)
@@ -210,16 +167,16 @@ const sxfyList = ref<SxFyRuleItem[]>([
 ])
 
 const predefineColors = ref([
-  '#3b82f6', // blue
-  '#ef4444', // red
-  '#10b981', // emerald
-  '#f59e0b', // amber
-  '#8b5cf6', // violet
-  '#ec4899', // pink
-  '#06b6d4', // cyan
-  '#84cc16', // teal
-  '#f97316', // orange
-  '#6366f1'  // indigo
+  '#3b82f6',
+  '#ef4444',
+  '#10b981',
+  '#f59e0b',
+  '#8b5cf6',
+  '#ec4899',
+  '#06b6d4',
+  '#84cc16',
+  '#f97316',
+  '#6366f1'
 ])
 
 const logContent = ref<string | null>(null)
@@ -243,32 +200,35 @@ const filterSxFy = ref<string>('')
 const filterDesc = ref<string[]>([])
 
 const availableSxFyOptions = computed(() => {
-    const sxfySet = new Set<string>()
-    timelineData.value.forEach(item => {
-        if (item.type === 'CEID') {
-            sxfySet.add('S6F11')
-        } else if (item.ceid) {
-            const match = item.ceid.match(/S\d+F\d+/)
-            if (match) sxfySet.add(match[0])
-        }
-    })
-    return Array.from(sxfySet).sort()
+  const sxfySet = new Set<string>()
+  timelineData.value.forEach(item => {
+    if (item.type === 'CEID') {
+      sxfySet.add('S6F11')
+    } else if (item.ceid) {
+      const match = item.ceid.match(/S\d+F\d+/)
+      if (match) sxfySet.add(match[0])
+    }
+  })
+  return Array.from(sxfySet).sort()
 })
 
 const availableDescOptions = computed(() => {
-    if (!filterSxFy.value) return []
-    const descSet = new Set<string>()
-    timelineData.value.forEach(item => {
+  if (!filterSxFy.value) return []
+
+  const descSet = new Set<string>()
+  timelineData.value.forEach(item => {
     let isMatch = false
     if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
       isMatch = true
     } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
       isMatch = true
     }
+
     if (isMatch && item.desc) {
       descSet.add(item.desc)
     }
   })
+
   return Array.from(descSet).sort()
 })
 
