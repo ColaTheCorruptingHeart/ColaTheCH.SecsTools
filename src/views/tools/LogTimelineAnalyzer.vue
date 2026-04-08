@@ -159,6 +159,15 @@
              </div>
              <el-empty v-else description="暂无符合规则的数据" :image-size="60" />
          </div>
+         <div class="p-2 border-t border-slate-200 dark:border-slate-700 flex-none flex flex-col gap-2 bg-slate-50 dark:bg-slate-900/50">
+            <div class="flex items-center">
+              <el-checkbox v-model="exportKeepTimeLine" size="small">保留时间行</el-checkbox>
+            </div>
+            <el-button class="w-full !ml-0" size="small" type="primary" :disabled="!filteredTimelineData.length || !logContent" @click="exportMatchedLogs">
+              <el-icon class="mr-1"><Download /></el-icon>
+              导出命中报文
+            </el-button>
+         </div>
       </div>
     </div>
 
@@ -212,7 +221,7 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch } from 'vue'
-import { Calendar, Delete, Document, Edit } from '@element-plus/icons-vue'
+import { Calendar, Delete, Download, Edit } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Codemirror } from 'vue-codemirror'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
@@ -242,6 +251,21 @@ interface SxFyRuleItem {
   desc?: string
 }
 
+interface TimelineItem {
+  time: string
+  ceid: string
+  ruleId?: string
+  desc: string
+  line: number
+  type?: 'CEID' | 'SxFy'
+}
+
+interface LogMessageBlock {
+  startLine: number
+  contentStartLine: number
+  endLine: number
+}
+
 const rulesList = ref<RuleItem[]>([])
 const sxfyList = ref<SxFyRuleItem[]>([
   { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true, desc: 'RCMD' },
@@ -262,9 +286,10 @@ const predefineColors = ref([
 ])
 
 const logContent = ref<string | null>(null)
-const timelineData = ref<{time: string, ceid: string, ruleId?: string, desc: string, line: number, type?: 'CEID' | 'SxFy'}[]>([])
+const timelineData = ref<TimelineItem[]>([])
 const editorTotalLines = ref(1)
 const scrollInfo = ref({ bottomOffset: 0 })
+const exportKeepTimeLine = ref(true)
 
 const viewRef = shallowRef<EditorView>()
 
@@ -279,6 +304,12 @@ const getMarkerColor = (id: string, type: 'CEID' | 'SxFy' = 'CEID', ruleId?: str
 
 const filterSxFy = ref<string>('')
 const filterDesc = ref<string[]>([])
+
+const matchHeaderLine = (lineTrim: string) => lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S\d+F\d+)/i)
+const matchStandaloneSfLine = (lineTrim: string) => lineTrim.match(/^(S\d+F\d+)(?:\s+W)?$/i)
+const matchTimePrefixLine = (lineTrim: string) => lineTrim.match(/^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/)
+
+const splitLogLines = (content: string) => content.split(/\r?\n/)
 
 const availableSxFyOptions = computed(() => {
     const sxfySet = new Set<string>()
@@ -489,6 +520,152 @@ const updateHighlights = () => {
   })
 }
 
+const buildLogMessageBlocks = (lines: string[]) => {
+  const blocks: LogMessageBlock[] = []
+  let currentStartLine = -1
+  let currentContentStartLine = -1
+  let pendingTimeLine = -1
+
+  const finalizeCurrentBlock = (endLine: number) => {
+    if (currentStartLine === -1 || currentContentStartLine === -1 || endLine < currentContentStartLine) {
+      return
+    }
+
+    blocks.push({
+      startLine: currentStartLine,
+      contentStartLine: currentContentStartLine,
+      endLine
+    })
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const lineTrim = lines[index]?.trim() || ''
+    if (!lineTrim) {
+      continue
+    }
+
+    const currentLineNumber = index + 1
+    const headerMatch = matchHeaderLine(lineTrim)
+    if (headerMatch) {
+      finalizeCurrentBlock(index)
+      currentStartLine = currentLineNumber
+      currentContentStartLine = currentLineNumber
+      pendingTimeLine = -1
+      continue
+    }
+
+    const timePrefixMatch = matchTimePrefixLine(lineTrim)
+    if (timePrefixMatch) {
+      finalizeCurrentBlock(index)
+      currentStartLine = -1
+      currentContentStartLine = -1
+      pendingTimeLine = currentLineNumber
+      continue
+    }
+
+    const sfMatch = matchStandaloneSfLine(lineTrim)
+    if (sfMatch) {
+      if (pendingTimeLine !== -1) {
+        currentStartLine = pendingTimeLine
+        currentContentStartLine = currentLineNumber
+        pendingTimeLine = -1
+      } else if (currentContentStartLine === -1) {
+        currentStartLine = currentLineNumber
+        currentContentStartLine = currentLineNumber
+      }
+    }
+  }
+
+  finalizeCurrentBlock(lines.length)
+  return blocks
+}
+
+const findBlockByLine = (blocks: LogMessageBlock[], lineNumber: number) => {
+  for (const block of blocks) {
+    if (lineNumber >= block.contentStartLine && lineNumber <= block.endLine) {
+      return block
+    }
+  }
+  return null
+}
+
+const downloadTextFile = (content: string, fileName: string) => {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+const normalizeExportIndentation = (line: string) => {
+  const trimmedRight = line.replace(/\s+$/, '')
+  const trimmed = trimmedRight.trimStart()
+
+  if (!trimmed || (trimmed[0] !== '<' && trimmed[0] !== '>')) {
+    return trimmedRight
+  }
+
+  const leadingWhitespace = trimmedRight.slice(0, trimmedRight.length - trimmed.length)
+  const visualIndentWidth = leadingWhitespace.replace(/\t/g, '    ').length
+  const indentLevel = visualIndentWidth > 0 ? Math.max(1, Math.round(visualIndentWidth / 4)) : 0
+
+  return `${'  '.repeat(indentLevel)}${trimmed}`
+}
+
+const exportMatchedLogs = () => {
+  if (!logContent.value) {
+    ElMessage.warning('请先加载日志文件')
+    return
+  }
+
+  if (!filteredTimelineData.value.length) {
+    ElMessage.warning('当前没有可导出的命中记录')
+    return
+  }
+
+  const lines = splitLogLines(logContent.value)
+  const blocks = buildLogMessageBlocks(lines)
+  const exportedBlocks: string[] = []
+  const seenBlockKeys = new Set<number>()
+
+  filteredTimelineData.value.forEach(item => {
+    const block = findBlockByLine(blocks, item.line)
+    if (!block) {
+      return
+    }
+
+    const uniqueKey = block.contentStartLine
+    if (seenBlockKeys.has(uniqueKey)) {
+      return
+    }
+
+    seenBlockKeys.add(uniqueKey)
+    const exportStartLine = exportKeepTimeLine.value ? block.startLine : block.contentStartLine
+    const blockText = lines
+      .slice(exportStartLine - 1, block.endLine)
+      .map(normalizeExportIndentation)
+      .join('\n')
+      .trimEnd()
+    if (blockText) {
+      exportedBlocks.push(blockText)
+    }
+  })
+
+  if (!exportedBlocks.length) {
+    ElMessage.warning('未能根据命中记录定位到完整报文')
+    return
+  }
+
+  const now = new Date()
+  const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
+  downloadTextFile(`${exportedBlocks.join('\n\n')}\n`, `timeline-hits-${timestamp}.log`)
+  ElMessage.success(`已导出 ${exportedBlocks.length} 条去重后的完整报文`)
+}
+
 // Scrollbar calculations
 const getScrollMarkerTop = (line: number) => {
   const total = editorTotalLines.value || 1
@@ -673,7 +850,7 @@ const applyRulesAndParse = () => {
           }
       })
 
-      const lines = logContent.value?.split('\n') || []
+      const lines = splitLogLines(logContent.value || '')
       const timeline: typeof timelineData.value = []
 
       let s6f11BlockLine = -1
@@ -767,9 +944,9 @@ const applyRulesAndParse = () => {
         }
 
         // Quick check for different header patterns
-        const headerMatchOld = lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S\d+F\d+)/i)
-        const sfMatchOnly = lineTrim.match(/^(S\d+F\d+)(?:\s+W)?$/i)
-        const timePrefixMatch = lineTrim.match(/^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/)
+        const headerMatchOld = matchHeaderLine(lineTrim)
+        const sfMatchOnly = matchStandaloneSfLine(lineTrim)
+        const timePrefixMatch = matchTimePrefixLine(lineTrim)
 
         let time = ''
         let sfName = ''
