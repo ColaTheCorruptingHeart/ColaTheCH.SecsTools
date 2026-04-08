@@ -64,6 +64,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Switch',
         color: '#a855f7', // purple-500
         componentPath: 'AsciiHexConverter'
+      },
+      {
+        id: 'slot-map-converter',
+        name: 'Slot 转换工具',
+        desc: '支持 25 槽位选择、25 位 map / 反相 map / 区间表达式之间的相互转换。',
+        path: '/tools/slot-map-converter',
+        icon: 'Grid',
+        color: '#06b6d4', // cyan-500
+        componentPath: 'SlotMapConverter'
       }
     ]
   },
