@@ -39,6 +39,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Document',
         color: '#f59e0b', // amber-500
         componentPath: 'SecsSmlFormatter'
+      },
+      {
+        id: 's1f12-svid-extractor',
+        name: 'S1F12 SVID 提取',
+        desc: '粘贴 S1F12 报文后自动格式化，并提取 SVID、SVNAME、UNITS 列表。',
+        path: '/tools/s1f12-svid-extractor',
+        icon: 'Document',
+        color: '#0891b2', // cyan-600
+        componentPath: 'S1F12SvidExtractor'
       }
     ]
   },

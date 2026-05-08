@@ -1,8 +1,17 @@
 <template>
   <div class="lg:w-64 xl:w-72 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-[500px] lg:h-full overflow-hidden">
     <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 font-medium text-sm flex justify-between items-center text-slate-600 dark:text-slate-300 flex-none">
-      <span>CEID匹配规则</span>
-      <el-button size="small" type="primary" plain @click="emit('openCeidImport')">导入</el-button>
+      <div class="flex items-center gap-2 min-w-0">
+        <span>CEID匹配规则</span>
+        <el-tag size="small" effect="plain">{{ ceidMatchMode }}</el-tag>
+      </div>
+      <div class="flex items-center gap-2">
+        <el-select :model-value="ceidMatchMode" size="small" class="w-28" @update:model-value="onCeidMatchModeChange">
+          <el-option label="S6F11" value="S6F11" />
+          <el-option label="S6F3" value="S6F3" />
+        </el-select>
+        <el-button size="small" type="primary" plain @click="emit('openCeidImport')">导入</el-button>
+      </div>
     </div>
     <div class="flex-1 overflow-auto p-2 custom-scrollbar border-b border-slate-200 dark:border-slate-700 min-h-0">
       <div v-if="rulesList.length > 0" class="flex flex-col gap-2">
@@ -59,9 +68,10 @@
 
 <script setup lang="ts">
 import { Delete, Edit } from '@element-plus/icons-vue'
-import type { RuleItem, SxFyRuleItem } from '../types'
+import type { CeidMatchMode, RuleItem, SxFyRuleItem } from '../types'
 
-defineProps<{
+const props = defineProps<{
+  ceidMatchMode: CeidMatchMode
   rulesList: RuleItem[]
   sxfyList: SxFyRuleItem[]
   predefineColors: string[]
@@ -70,6 +80,7 @@ defineProps<{
 
 const emit = defineEmits<{
   openCeidImport: []
+  updateCeidMatchMode: [mode: CeidMatchMode]
   openSxFyAdd: []
   openSxFyEdit: [rule: SxFyRuleItem]
   removeRule: [index: number]
@@ -79,4 +90,15 @@ const emit = defineEmits<{
   rulesChanged: []
   highlightChanged: []
 }>()
+
+const onCeidMatchModeChange = (value: string | number | boolean | undefined) => {
+  if (value === 'S6F11' || value === 'S6F3') {
+    if (value !== props.ceidMatchMode) {
+      emit('updateCeidMatchMode', value)
+    }
+    return
+  }
+
+  emit('updateCeidMatchMode', props.ceidMatchMode)
+}
 </script>

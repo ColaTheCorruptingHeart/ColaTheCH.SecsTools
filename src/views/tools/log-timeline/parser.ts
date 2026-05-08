@@ -1,8 +1,10 @@
-import type { LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './types'
+import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './types'
 
 export const matchHeaderLine = (lineTrim: string) => lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S\d+F\d+)/i)
 export const matchStandaloneSfLine = (lineTrim: string) => lineTrim.match(/^(S\d+F\d+)(?:\s+W)?$/i)
 export const matchTimePrefixLine = (lineTrim: string) => lineTrim.match(/^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/)
+
+const CEID_KEY_POSITION = '[0][1]'
 
 export const splitLogLines = (content: string) => content.split(/\r?\n/)
 
@@ -90,7 +92,7 @@ export function findBlockByLine(blocks: LogMessageBlock[], lineNumber: number) {
   return null
 }
 
-export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sxfyList: SxFyRuleItem[]) {
+export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sxfyList: SxFyRuleItem[], ceidMatchMode: CeidMatchMode = 'S6F11') {
   const ruleMap = new Map<string, string>()
   rulesList.forEach(rule => {
     if (rule.enabled !== false) {
@@ -117,13 +119,20 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
   const lines = splitLogLines(logContent)
   const timeline: TimelineItem[] = []
 
-  let s6f11BlockLine = -1
-  let s6f11Time = ''
+  let activeCeidSxFy = ''
+  let activeCeidTime = ''
   let currentPath: number[] = []
 
   let activeSxFyRules: SxFyRuleItem[] = []
   let sxFyBlockTime = ''
   let pendingTime = ''
+
+  const resetActiveStructuredState = () => {
+    activeCeidSxFy = ''
+    activeCeidTime = ''
+    activeSxFyRules = []
+    currentPath = []
+  }
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]
@@ -138,7 +147,7 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
 
     const firstChar = lineTrim[0]
     if (firstChar === '<' || firstChar === '>') {
-      if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
+      if (activeCeidSxFy || activeSxFyRules.length > 0) {
         if (lineTrim.startsWith('<L')) {
           if (currentPath.length === 0) {
             currentPath.push(0)
@@ -149,9 +158,7 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
         } else if (lineTrim.startsWith('>')) {
           currentPath.pop()
           if (currentPath.length <= 1) {
-            s6f11BlockLine = -1
-            activeSxFyRules = []
-            currentPath = []
+            resetActiveStructuredState()
           }
         } else {
           if (currentPath.length === 0) {
@@ -163,9 +170,10 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
           const currentPathStr = `[${currentPath.join('][')}]`
           const value = extractValueFromDataLine(lineTrim)
 
-          if (s6f11BlockLine !== -1 && currentPathStr === '[0][1]' && ruleMap.has(value)) {
+          if (activeCeidSxFy && currentPathStr === CEID_KEY_POSITION && ruleMap.has(value)) {
             timeline.push({
-              time: s6f11Time,
+              time: activeCeidTime,
+              sxFy: activeCeidSxFy,
               ceid: value,
               type: 'CEID',
               desc: ruleMap.get(value) || '',
@@ -178,6 +186,7 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
               if (rule.keyPos && rule.keyPos === currentPathStr) {
                 timeline.push({
                   time: sxFyBlockTime,
+                  sxFy: `S${rule.s}F${rule.f}`,
                   ceid: `S${rule.s}F${rule.f} ${rule.keyPos}`,
                   ruleId: rule.id,
                   type: 'SxFy',
@@ -210,10 +219,8 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
       pendingTime = ''
     } else if (timePrefixMatch && timePrefixMatch[1]) {
       pendingTime = timePrefixMatch[1]
-      if (s6f11BlockLine !== -1 || activeSxFyRules.length > 0) {
-        s6f11BlockLine = -1
-        activeSxFyRules = []
-        currentPath = []
+      if (activeCeidSxFy || activeSxFyRules.length > 0) {
+        resetActiveStructuredState()
       }
       continue
     }
@@ -225,11 +232,12 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
     currentPath = []
     activeSxFyRules = sxfyRuleMap.get(sfName) || []
 
-    if (sfName === 'S6F11') {
-      s6f11BlockLine = index + 1
-      s6f11Time = time
+    if (sfName === ceidMatchMode) {
+      activeCeidSxFy = sfName
+      activeCeidTime = time
     } else {
-      s6f11BlockLine = -1
+      activeCeidSxFy = ''
+      activeCeidTime = ''
     }
 
     if (activeSxFyRules.length > 0) {
@@ -238,6 +246,7 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
         if (!rule.keyPos) {
           timeline.push({
             time,
+            sxFy: sfName,
             ceid: sfName,
             ruleId: rule.id,
             type: 'SxFy',

@@ -95,133 +95,18 @@
 import { ref, nextTick } from 'vue'
 import { Document } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { formatSecsSml } from './secsSml'
 
 // State
 const sourceText = ref('')
 const formattedText = ref('')
-const formattedLines = ref<any[]>([])
+const formattedLines = ref<Array<{ text: string, clickable: boolean, path: string, jumpToIndex?: number }>>([])
 const selectedPath = ref('')
 const selectedLineIndex = ref(-1)
 const blinkLineIndex = ref(-1)
 const locatePathInput = ref('')
 const resultBoxRef = ref<HTMLElement | null>(null)
 let blinkTimer: any = null
-
-// Core Parsing Logic
-function extractHeader(input: string) {
-  const sfMatch = input.match(/\bS\d+F\d+\b/i)
-  const wMatch = input.match(/\bW\b/)
-  const sf = sfMatch ? sfMatch[0].toUpperCase() : ''
-  const w = wMatch ? ' W' : ''
-  return `${sf}${w}`.trim()
-}
-
-function normalizeOpenLine(line: string) {
-  const trimmed = line.trim()
-  const hasClose = trimmed.endsWith('>')
-  const inner = trimmed.slice(1, hasClose ? -1 : undefined).trim()
-
-  const cleaned = inner
-    .replace(/\[[^\]]*\]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  const partMatch = cleaned.match(/^([A-Za-z0-9]+)(?:,\d+)?\s*(.*)$/)
-  const type = partMatch ? partMatch[1] : cleaned
-  const value = partMatch && partMatch[2] ? partMatch[2].trim() : ''
-
-  return `<${type}${value ? ' ' + value : ''}${hasClose ? '>' : ''}`
-}
-
-function pathToString(path: number[]) {
-  return path.map(v => `[${v}]`).join('')
-}
-
-function parseSmlTree(rawText: string) {
-  if (!rawText || !rawText.trim()) {
-    return { header: '', roots: [], hasTerminalDot: false }
-  }
-
-  const lines = rawText.split(/\r?\n/)
-  const firstStructLine = lines.findIndex(l => l.trim().startsWith('<'))
-  if (firstStructLine === -1) {
-    return { header: extractHeader(rawText) || rawText.trim(), roots: [], hasTerminalDot: false }
-  }
-
-  const header = extractHeader(rawText)
-  const roots: any[] = []
-  const stack: any[] = []
-  let hasTerminalDot = false
-
-  for (let i = firstStructLine; i < lines.length; i += 1) {
-    const line = lines[i]?.trim() || ''
-    if (!line) continue
-
-    if (line.startsWith('<')) {
-      const normalized = normalizeOpenLine(line)
-      const node = { text: normalized, children: [] as any[] }
-
-      if (stack.length) {
-        stack[stack.length - 1].children.push(node)
-      } else {
-        roots.push(node)
-      }
-
-      if (!normalized.endsWith('>')) {
-        stack.push(node)
-      }
-      continue
-    }
-
-    if (line.startsWith('>')) {
-      if (line.endsWith('.')) hasTerminalDot = true
-      if (stack.length) stack.pop()
-      continue
-    }
-  }
-
-  return { header, roots, hasTerminalDot }
-}
-
-function buildFormattedResult(parsed: any) {
-  const lines: any[] = []
-
-  if (parsed.header) {
-    lines.push({ text: parsed.header, clickable: false, path: '' })
-  }
-
-  function walk(node: any, depth: number, path: number[]) {
-    const text = `${'    '.repeat(depth)}${node.text}`
-    const isClickable = true
-    const openLineIndex = lines.length
-
-    lines.push({
-      text,
-      clickable: isClickable,
-      path: isClickable ? pathToString(path) : '',
-      jumpToIndex: openLineIndex
-    })
-
-    if (node.children.length > 0) {
-      node.children.forEach((child: any, idx: number) => walk(child, depth + 1, path.concat(idx)))
-      lines.push({
-        text: `${'    '.repeat(depth)}>` + (depth === 0 && parsed.hasTerminalDot ? '.' : ''),
-        clickable: true,
-        path: pathToString(path),
-        jumpToIndex: openLineIndex
-      })
-    }
-  }
-
-  parsed.roots.forEach((root: any, idx: number) => walk(root, 0, [idx]))
-  return lines
-}
-
-function formatSecsSml(rawText: string) {
-  const parsed = parseSmlTree(rawText)
-  const lines = buildFormattedResult(parsed)
-  return { lines, text: lines.map(line => line.text).join('\n') }
-}
 
 // Handlers
 const onFormat = () => {
@@ -276,7 +161,7 @@ const focusLine = async (lineIndex: number, path: string, messageText: string) =
 const onSelectLine = async (idx: number) => {
   const line = formattedLines.value[idx]
   if (!line || !line.clickable) return
-  const targetIndex = Number.isInteger(line.jumpToIndex) ? line.jumpToIndex : idx
+  const targetIndex = typeof line.jumpToIndex === 'number' ? line.jumpToIndex : idx
   await focusLine(targetIndex, line.path, `当前位置：${line.path}`)
 }
 
