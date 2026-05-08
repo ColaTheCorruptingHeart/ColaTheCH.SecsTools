@@ -115,7 +115,7 @@
     >
       <Scratchpad :layout-mode="splitMode" @toggle-layout="toggleLayout" @minimize="isScratchpadCollapsed = true" />
     </div>
-    
+
     <!-- 随手记收起状态的悬浮按钮 -->
     <div v-show="isScratchpadCollapsed" class="fixed right-6 bottom-6 z-50">
       <el-tooltip content="展开随手记" placement="top">
@@ -182,7 +182,7 @@ const toggleLayout = () => {
 // === 拖拽调整大小逻辑 ===
 const scratchpadHeight = ref(45) // 仅当垂直时
 const scratchpadWidth = ref(40)  // 当水平时
-const isScratchpadCollapsed = ref(false)
+const isScratchpadCollapsed = ref(true)
 
 watch(isScratchpadCollapsed, (newVal) => {
   localStorage.setItem('heySecsTools_scratchpadCollapsed', String(newVal))
@@ -207,7 +207,9 @@ onMounted(() => {
   if (savedWidth) scratchpadWidth.value = parseFloat(savedWidth)
 
   const savedCollapsed = localStorage.getItem('heySecsTools_scratchpadCollapsed')
-  if (savedCollapsed === 'true') isScratchpadCollapsed.value = true
+  if (savedCollapsed === 'true' || savedCollapsed === 'false') {
+    isScratchpadCollapsed.value = savedCollapsed === 'true'
+  }
 })
 
 const startDrag = (e: MouseEvent) => {

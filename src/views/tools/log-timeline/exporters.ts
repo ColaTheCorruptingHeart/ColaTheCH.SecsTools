@@ -17,8 +17,8 @@ export function normalizeExportIndentation(line: string) {
 }
 
 function extractSxFyName(item: TimelineItem) {
-  if (item.type === 'CEID') {
-    return 'S6F11'
+  if (item.sxFy) {
+    return item.sxFy
   }
 
   const match = item.ceid.match(/S\d+F\d+/)

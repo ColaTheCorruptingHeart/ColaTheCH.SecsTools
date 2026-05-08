@@ -1,3 +1,5 @@
+export type CeidMatchMode = 'S6F11' | 'S6F3'
+
 export interface RuleItem {
   ceid: string
   desc: string
@@ -17,6 +19,7 @@ export interface SxFyRuleItem {
 
 export interface TimelineItem {
   time: string
+  sxFy: string
   ceid: string
   ruleId?: string
   desc: string

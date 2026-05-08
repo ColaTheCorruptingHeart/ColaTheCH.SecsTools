@@ -24,11 +24,13 @@
     <div class="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
         <!-- Left: Rules -->
         <RulesPanel
+        :ceid-match-mode="ceidMatchMode"
         :rules-list="rulesList"
         :sxfy-list="sxfyList"
         :predefine-colors="predefineColors"
         :has-log-content="Boolean(logContent)"
         @openCeidImport="importDialogVisible = true"
+        @updateCeidMatchMode="updateCeidMatchMode"
         @openSxFyAdd="openSxFyDialog()"
         @openSxFyEdit="openSxFyDialog($event)"
         @removeRule="removeRule"
@@ -103,7 +105,7 @@ import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
 import { analyzeLogTimeline } from './log-timeline/parser'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
-import type { RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
@@ -116,6 +118,7 @@ const jsonFileInput = ref<HTMLInputElement | null>(null)
 
 const importDialogVisible = ref(false)
 const importText = ref('')
+const ceidMatchMode = ref<CeidMatchMode>('S6F11')
 
 const rulesList = ref<RuleItem[]>([])
 const sxfyList = ref<SxFyRuleItem[]>([
@@ -186,8 +189,8 @@ const filterDesc = ref<string[]>([])
 const availableSxFyOptions = computed(() => {
   const sxfySet = new Set<string>()
   timelineData.value.forEach(item => {
-    if (item.type === 'CEID') {
-      sxfySet.add('S6F11')
+    if (item.sxFy) {
+      sxfySet.add(item.sxFy)
     } else if (item.ceid) {
       const match = item.ceid.match(/S\d+F\d+/)
       if (match) sxfySet.add(match[0])
@@ -201,12 +204,7 @@ const availableDescOptions = computed(() => {
 
   const descSet = new Set<string>()
   timelineData.value.forEach(item => {
-    let isMatch = false
-    if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
-      isMatch = true
-    } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
-      isMatch = true
-    }
+    const isMatch = item.sxFy === filterSxFy.value
 
     if (isMatch && item.desc) {
       descSet.add(item.desc)
@@ -219,13 +217,7 @@ const availableDescOptions = computed(() => {
 const filteredTimelineData = computed(() => {
   return timelineData.value.filter(item => {
     if (filterSxFy.value) {
-      let isMatch = false
-      if (item.type === 'CEID' && filterSxFy.value === 'S6F11') {
-        isMatch = true
-      } else if (item.type === 'SxFy' && item.ceid.startsWith(filterSxFy.value)) {
-        isMatch = true
-      }
-      if (!isMatch) return false
+      if (item.sxFy !== filterSxFy.value) return false
       if (filterDesc.value.length > 0 && !filterDesc.value.includes(item.desc)) return false
     }
     return true
@@ -237,10 +229,22 @@ const getTimelineItemKey = (item: TimelineItem) => {
     item.type || 'CEID',
     item.line,
     item.time,
+    item.sxFy,
     item.ceid,
     item.ruleId || '',
     item.desc
   ].join('|')
+}
+
+const updateCeidMatchMode = (mode: CeidMatchMode) => {
+  if (ceidMatchMode.value === mode) {
+    return
+  }
+
+  ceidMatchMode.value = mode
+  if (logContent.value) {
+    applyRulesAndParse()
+  }
 }
 
 const selectedTimelineItemKeySet = computed(() => {
@@ -648,6 +652,9 @@ const onJsonFileSelected = async (e: Event) => {
   try {
     const text = await file.text()
     const data = JSON.parse(text)
+    if (data.ceidMatchMode === 'S6F11' || data.ceidMatchMode === 'S6F3') {
+      ceidMatchMode.value = data.ceidMatchMode
+    }
     if (data.ceidRules) rulesList.value = data.ceidRules
     if (data.sxfyRules) sxfyList.value = data.sxfyRules
     ElMessage.success('配置导入成功')
@@ -660,6 +667,7 @@ const onJsonFileSelected = async (e: Event) => {
 
 const exportJsonConfig = () => {
   const data = {
+    ceidMatchMode: ceidMatchMode.value,
     ceidRules: rulesList.value,
     sxfyRules: sxfyList.value
   }
@@ -681,6 +689,7 @@ const clearAllData = () => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
+    ceidMatchMode.value = 'S6F11'
     rulesList.value = []
     sxfyList.value = []
     logContent.value = null
@@ -706,7 +715,7 @@ const applyRulesAndParse = () => {
 
   setTimeout(() => {
     try {
-      timelineData.value = analyzeLogTimeline(currentLogContent, rulesList.value, sxfyList.value)
+      timelineData.value = analyzeLogTimeline(currentLogContent, rulesList.value, sxfyList.value, ceidMatchMode.value)
       selectedTimelineItemKeys.value = []
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
