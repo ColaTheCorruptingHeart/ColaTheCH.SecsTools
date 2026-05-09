@@ -48,6 +48,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Document',
         color: '#0891b2', // cyan-600
         componentPath: 'S1F12SvidExtractor'
+      },
+      {
+        id: 's1f3-generator',
+        name: 'S1F3 生成器',
+        desc: '导入或粘贴 SVID 列表，按指定数据格式生成 S1F3 W 命令。',
+        path: '/tools/s1f3-generator',
+        icon: 'EditPen',
+        color: '#0d9488', // teal-600
+        componentPath: 'S1F3Generator'
       }
     ]
   },
