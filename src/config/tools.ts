@@ -18,9 +18,9 @@ export interface ToolCategory {
 
 export const toolsConfig: ToolCategory[] = [
   {
-    id: 'formatting',
-    name: '格式化',
-    icon: 'Document',
+    id: 'general-data-processing',
+    name: '通用数据处理',
+    icon: 'Switch',
     tools: [
       {
         id: 'json',
@@ -31,6 +31,31 @@ export const toolsConfig: ToolCategory[] = [
         color: '#10b981', // emerald-500
         componentPath: 'JsonFormatter'
       },
+      {
+        id: 'base-converter',
+        name: '进制转换',
+        desc: '支持同转多个数据，在线进制相互转化，并带有历史记录。',
+        path: '/tools/base-converter',
+        icon: 'Switch',
+        color: '#ec4899', // pink-500
+        componentPath: 'BaseConverter'
+      },
+      {
+        id: 'ascii-hex-converter',
+        name: 'ASCII / Hex 转换',
+        desc: '支持大块纯文本/ASCII码与十六进制 (Hex) 之间的相互转换。',
+        path: '/tools/ascii-hex-converter',
+        icon: 'Switch',
+        color: '#a855f7', // purple-500
+        componentPath: 'AsciiHexConverter'
+      },
+    ]
+  },
+  {
+    id: 'secs-message-tools',
+    name: 'SECS 报文工具',
+    icon: 'Document',
+    tools: [
       {
         id: 'secs-sml',
         name: 'SECS SML 格式化',
@@ -57,31 +82,6 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'EditPen',
         color: '#0d9488', // teal-600
         componentPath: 'S1F3Generator'
-      }
-    ]
-  },
-  {
-    id: 'conversion',
-    name: '转换',
-    icon: 'Switch',
-    tools: [
-      {
-        id: 'base-converter',
-        name: '进制转换',
-        desc: '支持同转多个数据，在线进制相互转化，并带有历史记录。',
-        path: '/tools/base-converter',
-        icon: 'Switch',
-        color: '#ec4899', // pink-500
-        componentPath: 'BaseConverter'
-      },
-      {
-        id: 'ascii-hex-converter',
-        name: 'ASCII / Hex 转换',
-        desc: '支持大块纯文本/ASCII码与十六进制 (Hex) 之间的相互转换。',
-        path: '/tools/ascii-hex-converter',
-        icon: 'Switch',
-        color: '#a855f7', // purple-500
-        componentPath: 'AsciiHexConverter'
       },
       {
         id: 'slot-map-converter',
@@ -95,8 +95,8 @@ export const toolsConfig: ToolCategory[] = [
     ]
   },
   {
-    id: 'log-processing',
-    name: '日志处理',
+    id: 'log-analysis',
+    name: '日志分析',
     icon: 'Histogram',
     tools: [
       {
