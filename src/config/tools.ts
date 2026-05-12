@@ -18,9 +18,9 @@ export interface ToolCategory {
 
 export const toolsConfig: ToolCategory[] = [
   {
-    id: 'formatting',
-    name: '格式化',
-    icon: 'Document',
+    id: 'general-data-processing',
+    name: '通用数据处理',
+    icon: 'Switch',
     tools: [
       {
         id: 'json',
@@ -31,31 +31,6 @@ export const toolsConfig: ToolCategory[] = [
         color: '#10b981', // emerald-500
         componentPath: 'JsonFormatter'
       },
-      {
-        id: 'secs-sml',
-        name: 'SECS SML 格式化',
-        desc: '粘贴原始报文日志，自动输出简洁层级格式，支持层级路径点选。',
-        path: '/tools/secs-sml',
-        icon: 'Document',
-        color: '#f59e0b', // amber-500
-        componentPath: 'SecsSmlFormatter'
-      },
-      {
-        id: 's1f12-svid-extractor',
-        name: 'S1F12 SVID 提取',
-        desc: '粘贴 S1F12 报文后自动格式化，并提取 SVID、SVNAME、UNITS 列表。',
-        path: '/tools/s1f12-svid-extractor',
-        icon: 'Document',
-        color: '#0891b2', // cyan-600
-        componentPath: 'S1F12SvidExtractor'
-      }
-    ]
-  },
-  {
-    id: 'conversion',
-    name: '转换',
-    icon: 'Switch',
-    tools: [
       {
         id: 'base-converter',
         name: '进制转换',
@@ -74,6 +49,40 @@ export const toolsConfig: ToolCategory[] = [
         color: '#a855f7', // purple-500
         componentPath: 'AsciiHexConverter'
       },
+    ]
+  },
+  {
+    id: 'secs-message-tools',
+    name: 'SECS 报文工具',
+    icon: 'Document',
+    tools: [
+      {
+        id: 'secs-sml',
+        name: 'SECS SML 格式化',
+        desc: '粘贴原始报文日志，自动输出简洁层级格式，支持层级路径点选。',
+        path: '/tools/secs-sml',
+        icon: 'Document',
+        color: '#f59e0b', // amber-500
+        componentPath: 'SecsSmlFormatter'
+      },
+      {
+        id: 's1f12-svid-extractor',
+        name: 'S1F12 SVID 提取',
+        desc: '粘贴 S1F12 报文后自动格式化，并提取 SVID、SVNAME、UNITS 列表。',
+        path: '/tools/s1f12-svid-extractor',
+        icon: 'Document',
+        color: '#0891b2', // cyan-600
+        componentPath: 'S1F12SvidExtractor'
+      },
+      {
+        id: 's1f3-generator',
+        name: 'S1F3 生成器',
+        desc: '导入或粘贴 SVID 列表，按指定数据格式生成 S1F3 W 命令。',
+        path: '/tools/s1f3-generator',
+        icon: 'EditPen',
+        color: '#0d9488', // teal-600
+        componentPath: 'S1F3Generator'
+      },
       {
         id: 'slot-map-converter',
         name: 'Slot 转换工具',
@@ -86,8 +95,8 @@ export const toolsConfig: ToolCategory[] = [
     ]
   },
   {
-    id: 'log-processing',
-    name: '日志处理',
+    id: 'log-analysis',
+    name: '日志分析',
     icon: 'Histogram',
     tools: [
       {
