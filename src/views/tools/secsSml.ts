@@ -35,11 +35,10 @@ export function normalizeOpenLine(line: string) {
   const inner = trimmed.slice(1, hasClose ? -1 : undefined).trim()
 
   const cleaned = inner
-    .replace(/\[[^\]]*\]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
 
-  const partMatch = cleaned.match(/^([A-Za-z0-9]+)(?:,\d+)?\s*(.*)$/)
+  const partMatch = cleaned.match(/^([A-Za-z0-9]+)(?:,\d+)?(?:\s*\[[^\]]*\])*\s*(.*)$/)
   const type = partMatch ? partMatch[1] : cleaned
   const value = partMatch && partMatch[2] ? partMatch[2].trim() : ''
 
