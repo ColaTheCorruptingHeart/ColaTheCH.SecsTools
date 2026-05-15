@@ -20,6 +20,7 @@
           <el-button size="small" type="primary" class="!rounded-md shadow-sm" @click="parseInput">生成S1F3</el-button>
           <el-button size="small" class="!rounded-md" @click="triggerImport">导入 CSV</el-button>
           <el-button size="small" class="!rounded-md" :disabled="!commandText" @click="copyCommand">复制命令</el-button>
+          <el-button size="small" class="!rounded-md" :disabled="!commandBodyText" @click="copyCommandBody">仅复制Body</el-button>
           <div class="w-px h-4 bg-slate-300 mx-1"></div>
           <el-button size="small" type="danger" plain class="!rounded-md" @click="clearAll">清空</el-button>
           <input ref="fileInputRef" type="file" class="hidden" accept=".csv,.txt" @change="handleFileImport" />
@@ -130,6 +131,19 @@ const commandText = computed(() => {
   ]
 
   return lines.join('\n')
+})
+
+const commandBodyText = computed(() => {
+  const normalizedFormat = dataFormat.value.trim() || 'U4'
+  const validRows = svidRows.value.filter(row => row.svid.trim())
+
+  if (!validRows.length) {
+    return ''
+  }
+
+  return validRows
+    .map(row => `    <${normalizedFormat} "${escapeCommandValue(row.svid.trim())}">`)
+    .join('\n')
 })
 
 function escapeCommandValue(value: string) {
@@ -299,6 +313,20 @@ async function copyCommand() {
   try {
     await navigator.clipboard.writeText(commandText.value)
     ElMessage.success('命令已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
+async function copyCommandBody() {
+  if (!commandBodyText.value) {
+    ElMessage.warning('当前没有可复制的 Body')
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(commandBodyText.value)
+    ElMessage.success('Body 已复制')
   } catch {
     ElMessage.error('复制失败，请手动复制')
   }
