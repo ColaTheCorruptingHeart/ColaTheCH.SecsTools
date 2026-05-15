@@ -84,6 +84,15 @@ export const toolsConfig: ToolCategory[] = [
         componentPath: 'S1F3Generator'
       },
       {
+        id: 's1f4-parser',
+        name: 'S1F4 解析',
+        desc: '按 SVNAME 映射顺序解析 S1F4 报文，并将返回值与对应 SVNAME 对齐展示。',
+        path: '/tools/s1f4-parser',
+        icon: 'Document',
+        color: '#14b8a6', // teal-500
+        componentPath: 'S1F4Parser'
+      },
+      {
         id: 'slot-map-converter',
         name: 'Slot 转换工具',
         desc: '支持 25 槽位选择、25 位 map / 反相 map / 区间表达式之间的相互转换。',
