@@ -1,5 +1,5 @@
 <template>
-  <div class="h-full flex flex-col gap-4 p-4">
+  <div class="h-full flex flex-col gap-4">
     <!-- Header Controls -->
     <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 flex-none">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -63,7 +63,7 @@
             <el-icon class="mr-1"><Delete /></el-icon> 清空历史
           </el-button>
         </div>
-        
+
         <div class="flex-1 overflow-hidden">
           <el-table
             :data="historyList"
