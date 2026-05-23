@@ -252,20 +252,13 @@ function parseRadixValue(rawValue: string, radix: SupportedRadix, label: string)
   return parsed
 }
 
-function parsePositiveDecimal(rawValue: string, label: string) {
-  const trimmed = rawValue.trim()
-  if (!trimmed) {
-    ElMessage.warning(`请输入${label}`)
+function parsePositiveRadixValue(rawValue: string, radix: SupportedRadix, label: string) {
+  const parsed = parseRadixValue(rawValue, radix, label)
+  if (parsed === null) {
     return null
   }
 
-  if (!/^\d+$/.test(trimmed)) {
-    ElMessage.warning(`${label}必须是正整数`)
-    return null
-  }
-
-  const parsed = Number.parseInt(trimmed, 10)
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+  if (parsed <= 0) {
     ElMessage.warning(`${label}必须是正整数`)
     return null
   }
@@ -299,10 +292,24 @@ function extractWildcardBlock(pattern: string) {
   }
 }
 
+function isValidPatternForRadix(pattern: string, radix: SupportedRadix) {
+  const fixedPart = pattern.replace(/\*/g, '')
+  if (!fixedPart) {
+    return true
+  }
+
+  return isValidDigitsForRadix(fixedPart, radix)
+}
+
 function buildSequenceValue(pattern: string, value: number, radix: SupportedRadix) {
   const trimmedPattern = pattern.trim()
   if (!trimmedPattern) {
     return formatRadixValue(value, radix)
+  }
+
+  if (!isValidPatternForRadix(trimmedPattern, radix)) {
+    ElMessage.warning(`模板不是有效的${radix}进制格式`)
+    return null
   }
 
   const wildcardBlock = extractWildcardBlock(trimmedPattern)
@@ -428,7 +435,7 @@ function generateSequenceSvids() {
   const radix = normalizeRadix(sequenceRadix.value)
   const startValue = parseRadixValue(sequenceStart.value, radix, '起始值')
   const stepValue = parseRadixValue(sequenceStep.value, radix, '步长')
-  const countValue = parsePositiveDecimal(sequenceCount.value, '递增数量')
+  const countValue = parsePositiveRadixValue(sequenceCount.value, radix, '递增数量')
 
   if (startValue === null || stepValue === null || countValue === null) {
     return
