@@ -29,8 +29,7 @@
     </div>
 
     <div class="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-4 min-h-0">
-      <div class="flex flex-col gap-4 min-h-0">
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-0 flex-1 overflow-hidden">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-0 overflow-hidden">
           <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
             <span class="text-sm font-medium text-slate-600">SVID 输入区</span>
             <span class="text-xs text-slate-400">支持 CSV、单列 SVID</span>
@@ -44,44 +43,12 @@
               resize="none"
             />
           </div>
-        </div>
-
-        <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-0 flex-1 overflow-hidden">
-          <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
-            <span class="text-sm font-medium text-slate-600">SVID 列表</span>
-            <el-tag size="small" type="info" round>共 {{ svidRows.length }} 条</el-tag>
-          </div>
-
-          <div class="flex-1 overflow-hidden">
-            <el-table :data="svidRows" style="width: 100%" height="100%" border stripe table-layout="auto">
-              <el-table-column prop="index" label="序号" width="72" align="center" />
-              <el-table-column label="SVID" min-width="150">
-                <template #default="{ row }">
-                  <el-input v-model="row.svid" size="small" placeholder="请输入 SVID" @input="refreshIndexes" />
-                </template>
-              </el-table-column>
-              <el-table-column label="SVNAME" min-width="180">
-                <template #default="{ row }">
-                  <el-input v-model="row.svname" size="small" placeholder="SVNAME" />
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="84" align="center" fixed="right">
-                <template #default="{ $index }">
-                  <el-button link type="danger" size="small" @click="removeRow($index)">删除</el-button>
-                </template>
-              </el-table-column>
-              <template #empty>
-                <el-empty description="暂无 SVID 数据" :image-size="60" />
-              </template>
-            </el-table>
-          </div>
-        </div>
       </div>
 
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
           <span class="text-sm font-medium text-slate-600">S1F3 命令结果</span>
-          <span class="text-xs text-slate-400">命令会随列表和数据格式实时更新</span>
+          <span class="text-xs text-slate-400">修改数据格式后需重新生成才会生效</span>
         </div>
 
         <div class="flex-1 overflow-hidden relative bg-slate-50/30">
@@ -100,51 +67,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { EditPen } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
-interface SvidItem {
-  index: number
-  svid: string
-  svname: string
-}
-
 const rawInput = ref('')
 const dataFormat = ref('U4')
-const svidRows = ref<SvidItem[]>([])
+const appliedDataFormat = ref('U4')
 const fileInputRef = ref<HTMLInputElement | null>(null)
-
-const commandText = computed(() => {
-  const normalizedFormat = dataFormat.value.trim() || 'U4'
-  const validRows = svidRows.value.filter(row => row.svid.trim())
-
-  if (!validRows.length) {
-    return ''
-  }
-
-  const lines = [
-    'S1F3 W',
-    '<L',
-    ...validRows.map(row => `    <${normalizedFormat} "${escapeCommandValue(row.svid.trim())}">`),
-    '>.',
-  ]
-
-  return lines.join('\n')
-})
-
-const commandBodyText = computed(() => {
-  const normalizedFormat = dataFormat.value.trim() || 'U4'
-  const validRows = svidRows.value.filter(row => row.svid.trim())
-
-  if (!validRows.length) {
-    return ''
-  }
-
-  return validRows
-    .map(row => `    <${normalizedFormat} "${escapeCommandValue(row.svid.trim())}">`)
-    .join('\n')
-})
+const commandText = ref('')
+const commandBodyText = ref('')
 
 function escapeCommandValue(value: string) {
   return value.replace(/"/g, '\\"')
@@ -235,12 +167,27 @@ function buildRowsFromLines(text: string) {
     .filter(row => row.svid)
 }
 
-function replaceRows(rows: SvidItem[]) {
-  svidRows.value = rows.map((row, index) => ({
-    index: index + 1,
-    svid: row.svid,
-    svname: row.svname,
-  }))
+function applyDataFormat() {
+  appliedDataFormat.value = dataFormat.value.trim() || 'U4'
+}
+
+function updateCommandResult(svidValues: string[]) {
+  if (!svidValues.length) {
+    commandText.value = ''
+    commandBodyText.value = ''
+    return
+  }
+
+  const normalizedFormat = appliedDataFormat.value.trim() || 'U4'
+  const bodyLines = svidValues.map(value => `    <${normalizedFormat} "${escapeCommandValue(value)}">`)
+
+  commandBodyText.value = bodyLines.join('\n')
+  commandText.value = [
+    'S1F3 W',
+    '<L',
+    ...bodyLines,
+    '>.',
+  ].join('\n')
 }
 
 function parseInput() {
@@ -250,14 +197,17 @@ function parseInput() {
   }
 
   const rows = buildRowsFromLines(rawInput.value)
-  replaceRows(rows)
+  applyDataFormat()
 
-  if (!svidRows.value.length) {
+  if (!rows.length) {
+    updateCommandResult([])
     ElMessage.warning('未识别到有效的 SVID 数据')
     return
   }
 
-  ElMessage.success(`已导入 ${svidRows.value.length} 条 SVID`)
+  updateCommandResult(rows.map(row => row.svid.trim()).filter(Boolean))
+
+  ElMessage.success(`已生成 ${rows.length} 条 SVID 命令`)
 }
 
 function triggerImport() {
@@ -275,12 +225,14 @@ async function handleFileImport(event: Event) {
     const text = await file.text()
     rawInput.value = text
     const rows = buildRowsFromLines(text)
-    replaceRows(rows)
+    applyDataFormat()
 
-    if (!svidRows.value.length) {
+    if (!rows.length) {
+      updateCommandResult([])
       ElMessage.warning('文件中未识别到有效的 SVID 数据')
     } else {
-      ElMessage.success(`已从文件导入 ${svidRows.value.length} 条 SVID`)
+      updateCommandResult(rows.map(row => row.svid.trim()).filter(Boolean))
+      ElMessage.success(`已从文件导入并生成 ${rows.length} 条 SVID 命令`)
     }
   } catch (error) {
     console.error('Failed to import SVID file', error)
@@ -288,20 +240,6 @@ async function handleFileImport(event: Event) {
   } finally {
     input.value = ''
   }
-}
-
-function refreshIndexes() {
-  svidRows.value = svidRows.value
-    .filter(row => row.svid.trim() || row.svname.trim())
-    .map((row, index) => ({
-      ...row,
-      index: index + 1,
-    }))
-}
-
-function removeRow(index: number) {
-  svidRows.value.splice(index, 1)
-  refreshIndexes()
 }
 
 async function copyCommand() {
@@ -335,7 +273,9 @@ async function copyCommandBody() {
 function clearAll() {
   rawInput.value = ''
   dataFormat.value = 'U4'
-  svidRows.value = []
+  appliedDataFormat.value = 'U4'
+  commandText.value = ''
+  commandBodyText.value = ''
   if (fileInputRef.value) {
     fileInputRef.value.value = ''
   }
