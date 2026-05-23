@@ -14,7 +14,7 @@
           </div>
 
           <div class="w-full xl:w-auto flex flex-wrap items-center gap-2 rounded-xl bg-slate-50/80 p-2">
-            <div class="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1 shrink-0 whitespace-nowrap">
+            <div class="flex items-center gap-2 rounded-md  px-2 py-1 shrink-0 whitespace-nowrap">
               <span class="text-xs text-slate-600">数据格式</span>
               <el-input v-model="dataFormat" size="small" class="shrink-0" style="width: 2.5rem" placeholder="U4" />
             </div>
@@ -114,6 +114,7 @@
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex min-h-[360px] flex-col overflow-hidden xl:min-h-0">
         <div class="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-2">
           <span class="text-sm font-medium text-slate-600">SVID 输入区</span>
+          <el-button size="small" class="!rounded-md" :disabled="!rawInput.trim()" @click="convertHexInputToDecimal">16进制转10进制</el-button>
         </div>
 
         <div class="flex-1 overflow-hidden relative">
@@ -318,7 +319,8 @@ function buildSequenceValue(pattern: string, value: number, radix: SupportedRadi
   }
 
   if (!wildcardBlock) {
-    return trimmedPattern
+    ElMessage.warning('模板非空时必须包含一段连续的 * 占位符；留空则按普通递增生成')
+    return null
   }
 
   const formattedValue = formatRadixValue(value, radix)
@@ -334,6 +336,37 @@ function buildSequenceValue(pattern: string, value: number, radix: SupportedRadi
 function fillGeneratedInput(values: string[], successMessage: string) {
   rawInput.value = values.join('\n')
   ElMessage.success(successMessage)
+}
+
+function convertHexInputToDecimal() {
+  if (!rawInput.value.trim()) {
+    ElMessage.warning('请先输入或粘贴 SVID 列表')
+    return
+  }
+
+  const rows = buildRowsFromLines(rawInput.value)
+  if (!rows.length) {
+    ElMessage.warning('未识别到可转换的 SVID 数据')
+    return
+  }
+
+  const convertedValues: string[] = []
+
+  for (const row of rows) {
+    const normalizedHexValue = row.svid.trim().replace(/^0x/i, '')
+    const parsedValue = parseRadixValue(normalizedHexValue, 16, `第 ${row.index} 条 SVID`)
+
+    if (parsedValue === null) {
+      return
+    }
+
+    convertedValues.push(String(parsedValue))
+  }
+
+  rawInput.value = convertedValues.join('\n')
+  applyDataFormat()
+  updateCommandResult(convertedValues)
+  ElMessage.success(`已将 ${convertedValues.length} 条 SVID 从 16 进制转换为 10 进制`)
 }
 
 function buildRowsFromLines(text: string) {
@@ -361,7 +394,7 @@ function buildRowsFromLines(text: string) {
         svname = svnameHeaderIndex >= 0 ? (cells[svnameHeaderIndex] || '') : ''
       } else if (cells.length === 1) {
         svid = firstCell
-      } else if (cells.length >= 2 && isNumeric(firstCell)) {
+      } else if (cells.length >= 3 && isNumeric(firstCell)) {
         svid = cells[1] || ''
         svname = cells[2] || ''
       } else {
