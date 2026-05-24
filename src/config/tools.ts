@@ -100,6 +100,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Grid',
         color: '#06b6d4', // cyan-500
         componentPath: 'SlotMapConverter'
+      },
+      {
+        id: 'recipe-body-analyzer',
+        name: 'RecipeBody 分析器',
+        desc: '将 PPBODY、Hex、字节数组、文件等输入统一转为原始字节，进行只读分析与无损导出。',
+        path: '/tools/recipe-body-analyzer',
+        icon: 'Monitor',
+        color: '#2563eb', // blue-600
+        componentPath: 'RecipeBodyAnalyzer'
       }
     ]
   },
