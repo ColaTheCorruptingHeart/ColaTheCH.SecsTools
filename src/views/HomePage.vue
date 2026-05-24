@@ -3,29 +3,6 @@
     <!-- 上半部分：工具列表 -->
     <div class="flex-1 overflow-y-auto px-1 custom-scrollbar">
 
-      <!-- 互联网搜索 -->
-      <div class="mb-8 mt-2">
-        <el-input
-          v-model="searchQuery"
-          placeholder="搜索互联网内容..."
-          size="large"
-          class="w-full shadow-sm hover:shadow transition-shadow rounded-xl search-bar-wrapper"
-          @keyup.enter="performSearch"
-        >
-          <template #prepend>
-            <el-select v-model="searchEngine" style="width: 110px" size="large">
-              <el-option label="必应 (Bing)" value="bing" />
-              <el-option label="百度 (Baidu)" value="baidu" />
-            </el-select>
-          </template>
-          <template #append>
-            <el-button @click="performSearch" class="px-6">
-              <el-icon class="mr-1"><component :is="Icons.Search" /></el-icon> 搜索
-            </el-button>
-          </template>
-        </el-input>
-      </div>
-
       <div class="mb-8" v-if="favoriteTools.length > 0">
         <h2 class="text-xl font-bold text-slate-800 tracking-tight flex items-center gap-2 mb-4">
           <el-icon class="text-amber-500"><StarFilled /></el-icon>
@@ -146,31 +123,6 @@ const goToTool = (path: string) => {
   router.push(path)
 }
 
-// === 互联网搜索逻辑 ===
-const searchQuery = ref('')
-const searchEngine = ref<'bing' | 'baidu'>('bing')
-
-const performSearch = () => {
-  const q = searchQuery.value.trim()
-  if (!q) return
-
-  let url = ''
-  if (searchEngine.value === 'bing') {
-    url = `https://www.bing.com/search?q=${encodeURIComponent(q)}`
-  } else if (searchEngine.value === 'baidu') {
-    url = `https://www.baidu.com/s?wd=${encodeURIComponent(q)}`
-  }
-
-  if (url) {
-    window.open(url, '_blank')
-  }
-}
-
-// 监听搜索引擎改变并保存
-watch(searchEngine, (newVal) => {
-  localStorage.setItem('heySecsTools_searchEngine', newVal)
-})
-
 // === 布局模式 (水平 / 垂直) ===
 const splitMode = ref<'horizontal' | 'vertical'>('horizontal')
 
@@ -190,11 +142,6 @@ watch(isScratchpadCollapsed, (newVal) => {
 
 // 页面加载时的状态初始化
 onMounted(() => {
-  const savedEngine = localStorage.getItem('heySecsTools_searchEngine') as 'bing' | 'baidu'
-  if (savedEngine === 'bing' || savedEngine === 'baidu') {
-    searchEngine.value = savedEngine
-  }
-
   const savedMode = localStorage.getItem('heySecsTools_splitMode') as 'horizontal' | 'vertical'
   if (savedMode === 'horizontal' || savedMode === 'vertical') {
     splitMode.value = savedMode

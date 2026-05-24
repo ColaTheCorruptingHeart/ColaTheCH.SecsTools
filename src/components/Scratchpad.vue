@@ -1,11 +1,11 @@
 <template>
   <div class="scratchpad-container flex flex-col h-full bg-white border-t border-slate-200">
-    <div class="flex items-center justify-between px-4 py-2 border-b border-slate-100 bg-slate-50 flex-shrink-0">
-      <div class="flex items-center gap-2">
+    <div class="scratchpad-header flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50 shrink-0">
+      <div class="flex min-w-0 flex-1 items-center gap-2">
         <el-icon class="text-indigo-500 text-lg"><DocumentAdd /></el-icon>
-        <h2 class="text-sm font-semibold text-slate-700 m-0">随手记 (Scratchpad)</h2>
+        <h2 class="m-0 min-w-0 text-sm font-semibold leading-5 text-slate-700">随手记 (Scratchpad)</h2>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="scratchpad-toolbar flex flex-wrap items-center gap-2">
         <el-tag size="small" type="info" class="!border-transparent !bg-slate-200 !text-slate-600">已自动保存</el-tag>
         <el-button size="small" plain @click="addBlock()">
           <el-icon class="mr-1"><Plus /></el-icon> 添加区块
@@ -356,5 +356,22 @@ onMounted(() => {
 
 :deep(.cm-editor) {
   outline: none !important;
+}
+
+.scratchpad-header {
+  align-content: flex-start;
+}
+
+.scratchpad-toolbar {
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+@media (max-width: 480px) {
+  .scratchpad-toolbar {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
 }
 </style>

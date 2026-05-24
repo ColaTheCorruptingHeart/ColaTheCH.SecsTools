@@ -2,17 +2,17 @@
   <el-container class="h-screen w-full bg-slate-50">
     <el-aside
       :width="isCollapse ? '64px' : '240px'"
-      class="bg-white border-r border-slate-200 transition-all duration-300 shadow-sm flex flex-col relative !overflow-visible z-20"
+      class="bg-white border-r border-slate-200 transition-all duration-300 shadow-sm flex flex-col relative overflow-visible! z-20"
     >
-      <div class="h-14 flex items-center border-b border-slate-100 bg-white flex-shrink-0 transition-all overflow-hidden" :class="isCollapse ? 'justify-center px-0' : 'justify-start px-4'">
-        <div class="w-8 h-8 rounded-md bg-blue-100/50 flex flex-shrink-0 items-center justify-center text-blue-600 transition-all">
+      <div class="h-14 flex items-center border-b border-slate-100 bg-white shrink-0 transition-all overflow-hidden" :class="isCollapse ? 'justify-center px-0' : 'justify-start px-4'">
+        <div class="w-8 h-8 rounded-md bg-blue-100/50 flex shrink-0 items-center justify-center text-blue-600 transition-all">
           <el-icon :size="18"><component :is="Icons.Grid" /></el-icon>
         </div>
-        <span v-if="!isCollapse" class="ml-3 font-bold text-slate-800 flex-shrink-0 whitespace-nowrap text-base tracking-wide">SECS Tools</span>
+        <span v-if="!isCollapse" class="ml-3 font-bold text-slate-800 shrink-0 whitespace-nowrap text-base tracking-wide">SECS Tools</span>
       </div>
 
       <!-- 将搜索栏移出 el-menu，避免受到 el-menu 样式的污染 -->
-      <div class="px-3 py-3 border-b border-slate-50 flex-shrink-0" v-show="!isCollapse">
+      <div class="px-3 py-3 border-b border-slate-50 shrink-0" v-show="!isCollapse">
         <div class="relative" ref="searchContainer" style="position: relative;">
           <el-icon style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 10; font-size: 16px; color: #94a3b8;"><Search /></el-icon>
           <input
@@ -105,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Search, HomeFilled } from '@element-plus/icons-vue'
 import * as Icons from '@element-plus/icons-vue'
@@ -113,10 +113,14 @@ import { toolsConfig, flatTools } from '../config/tools'
 
 const route = useRoute()
 const router = useRouter()
-const isCollapse = ref(true)
+const isCollapse = ref(false)
 
 const searchQuery = ref('')
 const isSearchFocused = ref(false)
+
+const syncCollapseState = (path: string) => {
+  isCollapse.value = path !== '/home'
+}
 
 const activeMenu = computed(() => {
   return route.path
@@ -149,7 +153,6 @@ const handleSearchBlur = () => {
 }
 
 // Ctrl+K to focus search
-import { onMounted, onUnmounted } from 'vue'
 const handleKeydown = (e: KeyboardEvent) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
     e.preventDefault()
@@ -164,6 +167,14 @@ const handleKeydown = (e: KeyboardEvent) => {
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
 })
+
+watch(
+  () => route.path,
+  (path) => {
+    syncCollapseState(path)
+  },
+  { immediate: true }
+)
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
