@@ -114,16 +114,23 @@
                   <el-option label="Shift-JIS" value="shift-jis" />
                 </el-select>
               </div>
-              <el-tag v-if="encodingRecommendation" size="small" type="info">
+              <div class="header-inline-field">
+                <span class="header-inline-label">显示方式</span>
+                <el-select v-model="outputViewMode" size="small" class="header-inline-select" :disabled="loading">
+                  <el-option label="格式化预览" value="highlight" />
+                  <el-option label="原始转义" value="raw" />
+                </el-select>
+              </div>
+              <!-- <el-tag v-if="encodingRecommendation" size="small" type="info">
                 推荐 {{ formatTextEncodingLabel(encodingRecommendation.encoding) }}
-              </el-tag>
+              </el-tag> -->
               <el-tag v-if="outputResult" type="success">{{ outputResult.label }}</el-tag>
               <el-button size="small" text :disabled="!canCopyOutput" @click="handleCopyOutput">复制</el-button>
             </div>
           </div>
 
           <template v-if="result">
-            <div class="flex-1 min-h-0 overflow-hidden">
+            <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
               <el-alert
                 v-if="outputResult?.mode === 'compressed'"
                 type="warning"
@@ -133,11 +140,19 @@
               />
               <template v-else>
                 <div v-if="outputDisplayNote" class="px-4 pt-3 text-xs text-slate-500">{{ outputDisplayNote }}</div>
+                <div v-if="outputViewMode === 'highlight'" class="flex-1 min-h-0 overflow-hidden recipe-body-preview-shell">
+                  <Codemirror
+                    v-model="outputPreviewModel"
+                    :style="{ height: '100%' }"
+                    :extensions="outputPreviewExtensions"
+                  />
+                </div>
                 <el-input
+                  v-else
                   :model-value="outputResult?.content || ''"
                   type="textarea"
                   readonly
-                  class="h-full recipe-body-textarea"
+                  class="flex-1 min-h-0 recipe-body-textarea"
                   :input-style="{ height: '100%', resize: 'none', border: 'none', boxShadow: 'none' }"
                 />
               </template>
@@ -154,6 +169,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { Codemirror } from 'vue-codemirror'
+import { EditorState } from '@codemirror/state'
+import { Decoration, EditorView, MatchDecorator, ViewPlugin, WidgetType, type ViewUpdate } from '@codemirror/view'
 import { Monitor } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type {
@@ -171,6 +189,7 @@ const loadingText = ref('正在解析 RecipeBody，请稍候...')
 
 const inputType = ref<RecipeBodyInputType>('auto')
 const textEncoding = ref<RecipeTextEncoding>('utf-8')
+const outputViewMode = ref<'highlight' | 'raw'>('highlight')
 const sourceText = ref('')
 const txtFileInputRef = ref<HTMLInputElement | null>(null)
 const importedFileName = ref('')
@@ -216,6 +235,137 @@ type OutputWorkerRequest = {
   preferredEncoding: RecipeTextEncoding
 }
 
+const controlCharacterLabels: Record<number, string> = {
+  0x00: 'NUL',
+  0x01: 'SOH',
+  0x02: 'STX',
+  0x03: 'ETX',
+  0x04: 'EOT',
+  0x05: 'ENQ',
+  0x06: 'ACK',
+  0x07: 'BEL',
+  0x08: 'BS',
+  0x09: 'TAB',
+  0x0a: 'LF',
+  0x0b: 'VT',
+  0x0c: 'FF',
+  0x0d: 'CR',
+  0x0e: 'SO',
+  0x0f: 'SI',
+  0x10: 'DLE',
+  0x11: 'DC1',
+  0x12: 'DC2',
+  0x13: 'DC3',
+  0x14: 'DC4',
+  0x15: 'NAK',
+  0x16: 'SYN',
+  0x17: 'ETB',
+  0x18: 'CAN',
+  0x19: 'EM',
+  0x1a: 'SUB',
+  0x1b: 'ESC',
+  0x1c: 'FS',
+  0x1d: 'GS',
+  0x1e: 'RS',
+  0x1f: 'US',
+  0x7f: 'DEL',
+}
+
+class EscapeSequenceWidget extends WidgetType {
+  constructor(
+    private readonly token: string,
+    private readonly label: string,
+    private readonly title: string,
+  ) {
+    super()
+  }
+
+  eq(other: EscapeSequenceWidget) {
+    return this.token === other.token && this.label === other.label && this.title === other.title
+  }
+
+  toDOM() {
+    const element = document.createElement('span')
+    element.className = 'cm-non-text-badge'
+    element.textContent = this.label
+    element.title = this.title
+    return element
+  }
+
+  ignoreEvent() {
+    return false
+  }
+}
+
+const escapeSequenceMatcher = new MatchDecorator({
+  regexp: /\\x[0-9A-F]{2}|\\u[0-9A-F]{4}|\\0/g,
+  decoration(match) {
+    const token = match[0]
+    const { label, title } = describeEscapeSequence(token)
+    return Decoration.replace({
+      widget: new EscapeSequenceWidget(token, label, title),
+      inclusive: false,
+    })
+  },
+})
+
+const escapeSequencePlugin = ViewPlugin.fromClass(
+  class {
+    decorations
+
+    constructor(view: EditorView) {
+      this.decorations = escapeSequenceMatcher.createDeco(view)
+    }
+
+    update(update: ViewUpdate) {
+      this.decorations = escapeSequenceMatcher.updateDeco(update, this.decorations)
+    }
+  },
+  {
+    decorations: value => value.decorations,
+  },
+)
+
+const outputPreviewTheme = EditorView.theme({
+  '&': {
+    height: '100%',
+    fontSize: '14px',
+    backgroundColor: 'transparent',
+    color: '#334155',
+  },
+  '.cm-scroller': {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    height: '100%',
+    overflow: 'auto',
+  },
+  '.cm-content': {
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+    padding: '12px 0',
+    minHeight: '100%',
+  },
+  '.cm-line': {
+    padding: '0 16px',
+    lineHeight: '1.7',
+  },
+  '.cm-cursor, .cm-dropCursor': {
+    display: 'none',
+  },
+  '.cm-selectionBackground, ::selection': {
+    backgroundColor: '#cbd5e1 !important',
+  },
+  '&.cm-focused': {
+    outline: 'none',
+  },
+})
+
+const outputPreviewExtensions = [
+  outputPreviewTheme,
+  EditorState.readOnly.of(true),
+  EditorView.editable.of(false),
+  EditorView.lineWrapping,
+  escapeSequencePlugin,
+]
+
 const visibleCandidateFormats = computed(() => analysis.value?.candidateFormats.slice(0, 3) ?? [])
 
 const primaryCandidateFormat = computed(() => visibleCandidateFormats.value[0] ?? null)
@@ -244,6 +394,11 @@ const outputDisplayNote = computed(() => {
 
 const canCopyOutput = computed(() => {
   return Boolean(outputResult.value?.content && outputResult.value.mode !== 'compressed')
+})
+
+const outputPreviewModel = computed({
+  get: () => outputResult.value?.content || '',
+  set: () => {},
 })
 
 const resetAnalysisState = () => {
@@ -278,16 +433,25 @@ const runRecipeBodyWorker = (request: AnalyzeWorkerRequest | OutputWorkerRequest
   })
 }
 
-const rebuildOutputResult = async () => {
+const waitForPaint = async () => {
+  await nextTick()
+  await new Promise<void>(resolve => {
+    requestAnimationFrame(() => resolve())
+  })
+}
+
+const rebuildOutputResult = async (pendingLoadingText = '正在根据所选编码生成输出，请稍候...') => {
   if (!result.value || !analysis.value) {
     outputResult.value = null
     return
   }
 
-  loadingText.value = '正在根据所选编码生成输出，请稍候...'
+  loadingText.value = pendingLoadingText
   loading.value = true
 
   try {
+    await waitForPaint()
+
     const response = await runRecipeBodyWorker({
       type: 'resolve-output',
       rawBytes: result.value.rawBytes,
@@ -320,7 +484,23 @@ watch(textEncoding, async () => {
     return
   }
 
-  await rebuildOutputResult()
+  await rebuildOutputResult('正在切换文本编码，请稍候...')
+})
+
+watch(outputViewMode, async () => {
+  if (!result.value || !outputResult.value || loading.value) {
+    return
+  }
+
+  loadingText.value = '正在切换显示方式，请稍候...'
+  loading.value = true
+
+  try {
+    await waitForPaint()
+  } finally {
+    loading.value = false
+    loadingText.value = '正在解析 RecipeBody，请稍候...'
+  }
 })
 
 const toggleSummaryCollapsed = () => {
@@ -481,6 +661,31 @@ const sourceTypeLabel = (type: RecipeBodyResolvedInputType) => {
       return type
   }
 }
+
+function describeEscapeSequence(token: string) {
+  if (token === '\\0') {
+    return {
+      label: 'NUL',
+      title: '控制字符 NUL (U+0000)',
+    }
+  }
+
+  if (token.startsWith('\\x')) {
+    const code = Number.parseInt(token.slice(2), 16)
+    const label = controlCharacterLabels[code] ?? token.slice(2)
+    return {
+      label,
+      title: `控制字节 ${label} (0x${token.slice(2)})`,
+    }
+  }
+
+  const code = Number.parseInt(token.slice(2), 16)
+  const label = controlCharacterLabels[code] ?? token.slice(2)
+  return {
+    label,
+    title: `控制字符 ${label} (U+${token.slice(2)})`,
+  }
+}
 </script>
 
 <style scoped>
@@ -518,5 +723,38 @@ const sourceTypeLabel = (type: RecipeBodyResolvedInputType) => {
 .header-inline-select :deep(.el-select__selected-item),
 .header-inline-select :deep(.el-select__placeholder) {
   white-space: nowrap;
+}
+
+.recipe-body-preview-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid rgb(226 232 240);
+  background: #fff;
+}
+
+.recipe-body-preview-shell :deep(.cm-editor) {
+  height: 100%;
+}
+
+.recipe-body-preview-shell :deep(.cm-scroller) {
+  min-height: 100%;
+}
+
+.recipe-body-preview-shell :deep(.cm-non-text-badge) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.9rem;
+  margin: 0 0.08rem;
+  padding: 0.04rem 0.34rem;
+  border-radius: 0.22rem;
+  background: #b91c1c;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  vertical-align: baseline;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.16);
 }
 </style>
