@@ -30,9 +30,17 @@
 
       <div class="grid flex-1 min-h-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(290px,0.98fr)_minmax(320px,0.82fr)_minmax(340px,1.08fr)]">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex min-h-[320px] flex-col overflow-hidden xl:min-h-0">
-        <div class="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-2">
-          <span class="text-sm font-medium text-slate-600">SVID生成</span>
-          <span class="text-xs text-slate-400">生成后回填到中间输入区</span>
+        <div class="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between gap-3">
+          <span class="text-sm font-medium text-slate-600 whitespace-nowrap shrink-0">SVID生成</span>
+          <div class="flex items-center justify-end shrink-0 min-w-0">
+            <div class="flex items-center gap-2 shrink-0 whitespace-nowrap rounded-lg ">
+              <span class="text-xs text-slate-500 shrink-0">回填方式</span>
+              <el-select v-model="generatedInputWriteMode" size="small" class="shrink-0 generated-mode-select">
+                <el-option label="覆盖" value="overwrite" />
+                <el-option label="追加" value="append" />
+              </el-select>
+            </div>
+          </div>
         </div>
 
         <div class="flex-1 overflow-auto p-3 flex flex-col">
@@ -171,6 +179,7 @@ const sequenceStart = ref('')
 const sequenceCount = ref('')
 const sequenceStep = ref('1')
 const sequenceRadix = ref<'10' | '16'>('10')
+const generatedInputWriteMode = ref<'overwrite' | 'append'>('overwrite')
 
 const MAX_GENERATED_ITEMS = 5000
 
@@ -334,7 +343,16 @@ function buildSequenceValue(pattern: string, value: number, radix: SupportedRadi
 }
 
 function fillGeneratedInput(values: string[], successMessage: string) {
-  rawInput.value = values.join('\n')
+  const nextText = values.join('\n')
+  const existingText = rawInput.value.replace(/\s+$/, '')
+
+  if (generatedInputWriteMode.value === 'append' && existingText.trim()) {
+    rawInput.value = `${existingText}\n${nextText}`
+    ElMessage.success(`${successMessage}，并已追加到输入区`)
+    return
+  }
+
+  rawInput.value = nextText
   ElMessage.success(successMessage)
 }
 
@@ -595,6 +613,7 @@ function clearAll() {
   sequenceCount.value = ''
   sequenceStep.value = '1'
   sequenceRadix.value = '10'
+  generatedInputWriteMode.value = 'overwrite'
   if (fileInputRef.value) {
     fileInputRef.value.value = ''
   }
@@ -615,5 +634,18 @@ function clearAll() {
 
 .code-input :deep(.el-textarea__inner:focus) {
   box-shadow: none !important;
+}
+
+.generated-mode-select {
+  width: 5.25rem;
+}
+
+.generated-mode-select :deep(.el-select__wrapper) {
+  min-height: 1.75rem;
+}
+
+.generated-mode-select :deep(.el-select__selected-item),
+.generated-mode-select :deep(.el-select__placeholder) {
+  white-space: nowrap;
 }
 </style>
