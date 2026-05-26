@@ -1,6 +1,8 @@
 import { buildLogMessageBlocks, findBlockByLine, splitLogLines } from './parser'
 import type { ExportedMatchedBlock, LogMessageBlock, TimelineItem } from './types'
 
+const EXPORT_HEADER_PATTERN = /(?:SEND|RECV)\s+((?:S\d+F\d+)(?::S\d+F\d+)*)\b(\s+W\b)?/i
+
 export function normalizeExportIndentation(line: string) {
   const trimmedRight = line.replace(/\s+$/, '')
   const trimmed = trimmedRight.trimStart()
@@ -14,6 +16,25 @@ export function normalizeExportIndentation(line: string) {
   const indentLevel = visualIndentWidth > 0 ? Math.max(1, Math.round(visualIndentWidth / 4)) : 0
 
   return `${'  '.repeat(indentLevel)}${trimmed}`
+}
+
+function normalizeExportHeaderLine(line: string) {
+  const trimmed = line.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  const headerMatch = trimmed.match(EXPORT_HEADER_PATTERN)
+  if (!headerMatch?.[1]) {
+    return trimmed
+  }
+
+  const sfName = headerMatch[1].match(/S\d+F\d+/i)?.[0]?.toUpperCase()
+  if (!sfName) {
+    return trimmed
+  }
+
+  return `${sfName}${headerMatch[2] ? ' W' : ''}`
 }
 
 function extractSxFyName(item: TimelineItem) {
@@ -69,8 +90,13 @@ export function buildExportedMatchedBlocks(logContent: string, timelineItems: Ti
     }
 
     const exportStartLine = includeTimeLine ? block.startLine : block.contentStartLine
-    const text = lines
-      .slice(exportStartLine - 1, block.endLine)
+    const exportLines = lines.slice(exportStartLine - 1, block.endLine)
+
+    if (!includeTimeLine && exportLines.length > 0) {
+      exportLines[0] = normalizeExportHeaderLine(exportLines[0] || '')
+    }
+
+    const text = exportLines
       .map(normalizeExportIndentation)
       .join('\n')
       .trimEnd()
