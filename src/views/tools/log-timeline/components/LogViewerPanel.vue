@@ -21,7 +21,7 @@
         @scroll="emit('scroll')"
       />
       <div v-else class="h-full flex items-center justify-center text-slate-400 text-sm">
-        请点击上方按钮加载日志文件
+        请点击上方按钮加载日志文件，支持多文件导入
       </div>
 
       <div

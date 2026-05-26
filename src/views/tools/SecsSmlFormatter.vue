@@ -53,7 +53,7 @@
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
           <span class="text-sm font-medium text-slate-600">格式化结果</span>
           <span class="text-xs text-slate-400 font-mono hidden sm:inline-block max-w-[200px] truncate" :title="selectedPath">
-            {{ selectedPath ? ('当前位置：' + selectedPath) : '点击任意结果行查看路径，双击可复制' }}
+            {{ selectedPath ? ('当前位置：' + selectedPath) : '点击任意结果行查看路径，双击可复制路径' }}
           </span>
         </div>
 
@@ -70,7 +70,7 @@
           </div>
         </div>
         <div class="bg-slate-50 border-t border-slate-200 px-4 py-1.5 flex items-center justify-between shrink-0">
-          <span class="text-xs text-slate-500">提示：点击结果行可查看路径并定位，双击可弹框并复制；也可输入路径直接定位。</span>
+          <span class="text-xs text-slate-500">提示：点击结果行可查看路径并定位，双击可直接复制路径；也可输入路径直接定位。</span>
         </div>
       </div>
     </div>
@@ -81,7 +81,7 @@
 import { computed, nextTick, ref, shallowRef } from 'vue'
 import { Codemirror } from 'vue-codemirror'
 import { Document } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Compartment, EditorState } from '@codemirror/state'
 import { Decoration, EditorView, lineNumbers } from '@codemirror/view'
 
@@ -209,19 +209,6 @@ function getTargetLineIndex(lineNumber: number) {
   return typeof line.jumpToIndex === 'number' ? line.jumpToIndex : lineNumber - 1
 }
 
-async function showCopiedPath(path: string, copied: boolean) {
-  await ElMessageBox.alert(
-    `<div class="mt-2 text-center text-lg font-mono text-amber-600 bg-amber-50 p-4 rounded-lg border border-amber-200">${path}</div>`,
-    copied ? '位置已选择并自动复制' : '所选位置 (复制失败，请手动复制)',
-    {
-      dangerouslyUseHTMLString: true,
-      confirmButtonText: '确定',
-      type: copied ? 'success' : undefined,
-      center: true
-    }
-  )
-}
-
 function getLineNumberFromMouseEvent(event: MouseEvent, view: EditorView) {
   const position = view.posAtCoords({ x: event.clientX, y: event.clientY })
   if (position == null) return -1
@@ -255,8 +242,12 @@ function handleOutputDoubleClick(event: MouseEvent, view: EditorView) {
   }
 
   navigator.clipboard.writeText(line.path)
-    .then(() => showCopiedPath(line.path, true))
-    .catch(() => showCopiedPath(line.path, false))
+    .then(() => {
+      ElMessage.success('路径已复制')
+    })
+    .catch(() => {
+      ElMessage.error('复制失败，请手动复制')
+    })
 
   return false
 }

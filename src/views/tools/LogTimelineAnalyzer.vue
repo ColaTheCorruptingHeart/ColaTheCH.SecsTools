@@ -91,6 +91,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
+import { LOG_TIMELINE_LIMITS } from './log-timeline/config'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
@@ -103,11 +104,6 @@ const loading = ref(false)
 const pageRoot = ref<HTMLDivElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const jsonFileInput = ref<HTMLInputElement | null>(null)
-
-const MAX_IMPORT_BYTES = 20 * 1024 * 1024
-const MAX_IMPORT_LINES = 150_000
-const MAX_HIGHLIGHT_DECORATIONS = 1_500
-const MAX_SCROLL_MARKERS = 800
 
 type LogTimelineWorkerSuccessMessage = {
   type: 'success'
@@ -208,8 +204,8 @@ const readAndMergeLogFiles = async (files: File[]) => {
   const sortedFiles = sortFilesByName(files)
   const totalBytes = sortedFiles.reduce((sum, file) => sum + file.size, 0)
 
-  if (totalBytes > MAX_IMPORT_BYTES) {
-    throw new Error(`日志文件总大小超过限制（${(MAX_IMPORT_BYTES / 1024 / 1024).toFixed(0)} MB），请拆分后再导入`)
+  if (totalBytes > LOG_TIMELINE_LIMITS.importMaxBytes) {
+    throw new Error(`日志文件总大小超过限制（${(LOG_TIMELINE_LIMITS.importMaxBytes / 1024 / 1024).toFixed(0)} MB），请拆分后再导入`)
   }
 
   const texts: string[] = []
@@ -219,8 +215,8 @@ const readAndMergeLogFiles = async (files: File[]) => {
     const text = await file.text()
     totalLines += countLines(text)
 
-    if (totalLines > MAX_IMPORT_LINES) {
-      throw new Error(`日志总行数超过限制（${MAX_IMPORT_LINES.toLocaleString()} 行），请拆分后再导入`)
+    if (totalLines > LOG_TIMELINE_LIMITS.importMaxLines) {
+      throw new Error(`日志总行数超过限制（${LOG_TIMELINE_LIMITS.importMaxLines.toLocaleString()} 行），请拆分后再导入`)
     }
 
     texts.push(text)
@@ -341,7 +337,7 @@ const filteredTimelineData = computed(() => {
 })
 
 const highlightDisabled = computed(() => {
-  return filteredTimelineData.value.length > MAX_HIGHLIGHT_DECORATIONS
+  return filteredTimelineData.value.length > LOG_TIMELINE_LIMITS.highlightDecorationMaxCount
 })
 
 const sampleTimelineItems = (items: TimelineItem[], limit: number) => {
@@ -371,7 +367,7 @@ const sampleTimelineItems = (items: TimelineItem[], limit: number) => {
 }
 
 const renderedMarkerItems = computed(() => {
-  return sampleTimelineItems(filteredTimelineData.value, MAX_SCROLL_MARKERS)
+  return sampleTimelineItems(filteredTimelineData.value, LOG_TIMELINE_LIMITS.scrollMarkerSampleMaxCount)
 })
 
 const markerSamplingEnabled = computed(() => {
