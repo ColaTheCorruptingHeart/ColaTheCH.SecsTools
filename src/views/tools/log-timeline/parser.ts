@@ -1,8 +1,113 @@
 import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './types'
 
-export const matchHeaderLine = (lineTrim: string) => lineTrim.match(/^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+(S\d+F\d+)/i)
-export const matchStandaloneSfLine = (lineTrim: string) => lineTrim.match(/^(S\d+F\d+)(?:\s+W)?$/i)
-export const matchTimePrefixLine = (lineTrim: string) => lineTrim.match(/^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/)
+interface MessageHeaderMatch {
+  time: string
+  sfName: string
+}
+
+interface LogDialect {
+  id: string
+  matchHeaderLine: (lineTrim: string) => MessageHeaderMatch | null
+  matchStandaloneSfLine: (lineTrim: string) => string | null
+  matchTimePrefixLine: (lineTrim: string) => string | null
+}
+
+interface DialectMatch<T> {
+  dialect: LogDialect
+  value: T
+}
+
+const STANDALONE_SF_PATTERN = /^(S\d+F\d+)(?:\s+W)?$/i
+const LEGACY_HEADER_PATTERN = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+((?:S\d+F\d+)(?::S\d+F\d+)*)\b/i
+const LEGACY_TIME_PREFIX_PATTERN = /^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/
+const BRACKET_HEADER_PATTERN = /^\[(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})\]\s+(?:SEND|RECV)\s+((?:S\d+F\d+)(?::S\d+F\d+)*)\b/i
+const BRACKET_TIME_PREFIX_PATTERN = /^\[(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})\]/
+
+function normalizeSfName(rawValue: string) {
+  const match = rawValue.match(/S\d+F\d+/i)
+  return match?.[0]?.toUpperCase() || ''
+}
+
+function createHeaderMatcher(pattern: RegExp) {
+  return (lineTrim: string): MessageHeaderMatch | null => {
+    const match = lineTrim.match(pattern)
+    if (!match?.[1] || !match[2]) {
+      return null
+    }
+
+    const sfName = normalizeSfName(match[2])
+    if (!sfName) {
+      return null
+    }
+
+    return {
+      time: match[1],
+      sfName
+    }
+  }
+}
+
+function createTimePrefixMatcher(pattern: RegExp) {
+  return (lineTrim: string) => {
+    const match = lineTrim.match(pattern)
+    return match?.[1] || null
+  }
+}
+
+function matchStandaloneSfValue(lineTrim: string) {
+  const match = lineTrim.match(STANDALONE_SF_PATTERN)
+  return match?.[1]?.toUpperCase() || null
+}
+
+const logDialects: LogDialect[] = [
+  {
+    id: 'bracket-timestamp',
+    matchHeaderLine: createHeaderMatcher(BRACKET_HEADER_PATTERN),
+    matchStandaloneSfLine: matchStandaloneSfValue,
+    matchTimePrefixLine: createTimePrefixMatcher(BRACKET_TIME_PREFIX_PATTERN)
+  },
+  {
+    id: 'legacy-inline',
+    matchHeaderLine: createHeaderMatcher(LEGACY_HEADER_PATTERN),
+    matchStandaloneSfLine: matchStandaloneSfValue,
+    matchTimePrefixLine: createTimePrefixMatcher(LEGACY_TIME_PREFIX_PATTERN)
+  }
+]
+
+function getOrderedDialects(preferredDialect: LogDialect | null) {
+  if (!preferredDialect) {
+    return logDialects
+  }
+
+  return [preferredDialect, ...logDialects.filter(dialect => dialect !== preferredDialect)]
+}
+
+function matchWithDialects<T>(
+  lineTrim: string,
+  preferredDialect: LogDialect | null,
+  matcher: (dialect: LogDialect, line: string) => T | null
+): DialectMatch<T> | null {
+  for (const dialect of getOrderedDialects(preferredDialect)) {
+    const value = matcher(dialect, lineTrim)
+    if (value !== null) {
+      return { dialect, value }
+    }
+  }
+
+  return null
+}
+
+function matchHeaderLine(lineTrim: string, preferredDialect: LogDialect | null) {
+  return matchWithDialects(lineTrim, preferredDialect, (dialect, line) => dialect.matchHeaderLine(line))
+}
+
+function matchStandaloneSfLine(lineTrim: string, preferredDialect: LogDialect | null) {
+  return matchWithDialects(lineTrim, preferredDialect, (dialect, line) => dialect.matchStandaloneSfLine(line))
+}
+
+function matchTimePrefixLine(lineTrim: string, preferredDialect: LogDialect | null) {
+  return matchWithDialects(lineTrim, preferredDialect, (dialect, line) => dialect.matchTimePrefixLine(line))
+}
 
 const CEID_KEY_POSITION = '[0][1]'
 
@@ -27,6 +132,7 @@ export function buildLogMessageBlocks(lines: string[]) {
   let currentStartLine = -1
   let currentContentStartLine = -1
   let pendingTimeLine = -1
+  let preferredDialect: LogDialect | null = null
 
   const finalizeCurrentBlock = (endLine: number) => {
     if (currentStartLine === -1 || currentContentStartLine === -1 || endLine < currentContentStartLine) {
@@ -47,8 +153,9 @@ export function buildLogMessageBlocks(lines: string[]) {
     }
 
     const currentLineNumber = index + 1
-    const headerMatch = matchHeaderLine(lineTrim)
+    const headerMatch = matchHeaderLine(lineTrim, preferredDialect)
     if (headerMatch) {
+      preferredDialect = headerMatch.dialect
       finalizeCurrentBlock(index)
       currentStartLine = currentLineNumber
       currentContentStartLine = currentLineNumber
@@ -56,8 +163,9 @@ export function buildLogMessageBlocks(lines: string[]) {
       continue
     }
 
-    const timePrefixMatch = matchTimePrefixLine(lineTrim)
+    const timePrefixMatch = matchTimePrefixLine(lineTrim, preferredDialect)
     if (timePrefixMatch) {
+      preferredDialect = timePrefixMatch.dialect
       finalizeCurrentBlock(index)
       currentStartLine = -1
       currentContentStartLine = -1
@@ -65,8 +173,9 @@ export function buildLogMessageBlocks(lines: string[]) {
       continue
     }
 
-    const sfMatch = matchStandaloneSfLine(lineTrim)
+    const sfMatch = matchStandaloneSfLine(lineTrim, preferredDialect)
     if (sfMatch) {
+      preferredDialect = sfMatch.dialect
       if (pendingTimeLine !== -1) {
         currentStartLine = pendingTimeLine
         currentContentStartLine = currentLineNumber
@@ -126,6 +235,7 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
   let activeSxFyRules: SxFyRuleItem[] = []
   let sxFyBlockTime = ''
   let pendingTime = ''
+  let preferredDialect: LogDialect | null = null
 
   const resetActiveStructuredState = () => {
     activeCeidSxFy = ''
@@ -202,23 +312,26 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
       continue
     }
 
-    const headerMatch = matchHeaderLine(lineTrim)
-    const sfMatch = matchStandaloneSfLine(lineTrim)
-    const timePrefixMatch = matchTimePrefixLine(lineTrim)
+    const headerMatch = matchHeaderLine(lineTrim, preferredDialect)
+    const sfMatch = matchStandaloneSfLine(lineTrim, preferredDialect)
+    const timePrefixMatch = matchTimePrefixLine(lineTrim, preferredDialect)
 
     let time = ''
     let sfName = ''
 
-    if (headerMatch && headerMatch[1] && headerMatch[2]) {
-      time = headerMatch[1]
-      sfName = headerMatch[2].toUpperCase()
+    if (headerMatch) {
+      preferredDialect = headerMatch.dialect
+      time = headerMatch.value.time
+      sfName = headerMatch.value.sfName
       pendingTime = ''
-    } else if (sfMatch && sfMatch[1] && pendingTime) {
+    } else if (sfMatch && pendingTime) {
+      preferredDialect = sfMatch.dialect
       time = pendingTime
-      sfName = sfMatch[1].toUpperCase()
+      sfName = sfMatch.value
       pendingTime = ''
-    } else if (timePrefixMatch && timePrefixMatch[1]) {
-      pendingTime = timePrefixMatch[1]
+    } else if (timePrefixMatch) {
+      preferredDialect = timePrefixMatch.dialect
+      pendingTime = timePrefixMatch.value
       if (activeCeidSxFy || activeSxFyRules.length > 0) {
         resetActiveStructuredState()
       }
