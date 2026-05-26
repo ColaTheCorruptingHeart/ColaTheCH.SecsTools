@@ -25,9 +25,10 @@
       <LogViewerPanel
         :log-content="logContent"
         :extensions="extensions"
-        :marker-items="filteredTimelineData"
+        :marker-items="renderedMarkerItems"
         :bottom-offset="scrollInfo.bottomOffset"
         :has-view="Boolean(viewRef)"
+        :performance-hint="logViewerPerformanceHint"
         :get-marker-color="getMarkerColor"
         :get-scroll-marker-top="getScrollMarkerTop"
         @update:logContent="logContent = $event"
@@ -105,6 +106,8 @@ const jsonFileInput = ref<HTMLInputElement | null>(null)
 
 const MAX_IMPORT_BYTES = 20 * 1024 * 1024
 const MAX_IMPORT_LINES = 150_000
+const MAX_HIGHLIGHT_DECORATIONS = 1_500
+const MAX_SCROLL_MARKERS = 800
 
 type LogTimelineWorkerSuccessMessage = {
   type: 'success'
@@ -337,6 +340,60 @@ const filteredTimelineData = computed(() => {
   })
 })
 
+const highlightDisabled = computed(() => {
+  return filteredTimelineData.value.length > MAX_HIGHLIGHT_DECORATIONS
+})
+
+const sampleTimelineItems = (items: TimelineItem[], limit: number) => {
+  if (items.length <= limit) {
+    return items
+  }
+
+  const result: TimelineItem[] = []
+  const lastIndex = items.length - 1
+
+  for (let index = 0; index < limit; index += 1) {
+    const sampleIndex = Math.min(lastIndex, Math.round((index * lastIndex) / Math.max(1, limit - 1)))
+    const nextItem = items[sampleIndex]
+
+    if (!nextItem) {
+      continue
+    }
+
+    const previousItem = result[result.length - 1]
+
+    if (!previousItem || getTimelineItemKey(previousItem) !== getTimelineItemKey(nextItem)) {
+      result.push(nextItem)
+    }
+  }
+
+  return result
+}
+
+const renderedMarkerItems = computed(() => {
+  return sampleTimelineItems(filteredTimelineData.value, MAX_SCROLL_MARKERS)
+})
+
+const markerSamplingEnabled = computed(() => {
+  return renderedMarkerItems.value.length < filteredTimelineData.value.length
+})
+
+const logViewerPerformanceHint = computed(() => {
+  if (highlightDisabled.value && markerSamplingEnabled.value) {
+    return '命中较多，已关闭行高亮并采样滚动标记'
+  }
+
+  if (highlightDisabled.value) {
+    return '命中较多，已关闭行高亮'
+  }
+
+  if (markerSamplingEnabled.value) {
+    return '命中较多，已采样滚动标记'
+  }
+
+  return ''
+})
+
 const getTimelineItemKey = (item: TimelineItem) => {
   return [
     item.type || 'CEID',
@@ -538,7 +595,7 @@ const removeSxFyRule = (index: number) => {
 const updateHighlights = () => {
   if (!viewRef.value) return
 
-  if (filteredTimelineData.value.length === 0) {
+  if (filteredTimelineData.value.length === 0 || highlightDisabled.value) {
     viewRef.value.dispatch({
       effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
     })
@@ -709,6 +766,7 @@ const handleReady = (payload: { view: EditorView }) => {
   if (payload.view && payload.view.state) {
     editorTotalLines.value = payload.view.state.doc.lines
     syncScrollGeometry(payload.view)
+    updateHighlights()
   }
 }
 
@@ -896,19 +954,10 @@ const applyRulesAndParse = () => {
         editorTotalLines.value = viewRef.value.state.doc.lines
       }
 
-      // Apply Highlights
-      if (viewRef.value && filteredTimelineData.value.length > 0) {
+      if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
         syncScrollGeometry(viewRef.value)
-        const doc = viewRef.value.state.doc
-
-        viewRef.value.dispatch({
-          effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(filteredTimelineData.value, doc)))
-        })
-      } else if (viewRef.value && filteredTimelineData.value.length === 0) {
-        viewRef.value.dispatch({
-          effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
-        })
+        updateHighlights()
       }
     } catch (err: unknown) {
       if (requestVersion === parseRequestVersion) {
