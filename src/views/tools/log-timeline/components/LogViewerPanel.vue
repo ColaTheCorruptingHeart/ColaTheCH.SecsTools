@@ -1,6 +1,9 @@
 <template>
   <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden min-h-[300px] lg:min-h-0">
-    <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 px-4 py-2 font-medium text-sm text-slate-600 dark:text-slate-300">日志内容</div>
+    <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center justify-between gap-3">
+      <div class="font-medium text-sm text-slate-600 dark:text-slate-300">日志内容</div>
+      <slot name="header-actions"></slot>
+    </div>
     <div class="flex-1 overflow-hidden relative group">
       <Codemirror
         v-if="logContent !== null"
@@ -11,7 +14,7 @@
         @scroll="emit('scroll')"
       />
       <div v-else class="h-full flex items-center justify-center text-slate-400 text-sm">
-        请点击右上角按钮加载日志文件
+        请点击上方按钮加载日志文件
       </div>
 
       <div

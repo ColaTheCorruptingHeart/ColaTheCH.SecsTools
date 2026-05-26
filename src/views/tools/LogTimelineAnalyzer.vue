@@ -1,27 +1,7 @@
 <template>
-  <div class="h-full flex flex-col gap-4" v-loading="loading" element-loading-text="正在解析日志文件，请稍候...">
-    <!-- Header -->
-    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 flex-none">
-       <div class="flex items-center justify-between">
-           <div class="flex items-center gap-2">
-               <div class="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                   <el-icon class="text-blue-500 text-xl"><Calendar /></el-icon>
-               </div>
-               <div>
-                   <h2 class="text-lg font-semibold text-slate-800 dark:text-gray-100 m-0">SECS日志时间线分析</h2>
-                   <p class="text-xs text-slate-500 dark:text-gray-400 m-0 mt-0.5">SECS日志解析，提取并在时间线呈现关键CEID与事件。</p>
-               </div>
-           </div>
-           <div class="flex items-center gap-2">
-               <el-button type="danger" plain @click="clearAllData">清空数据</el-button>
-               <el-button type="primary" @click="triggerUpload">加载日志文件</el-button>
-               <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" @change="onFileSelected" />
-           </div>
-       </div>
-    </div>
-
+  <div ref="pageRoot" class="h-full flex flex-col gap-4" v-loading="loading" element-loading-text="正在解析日志文件，请稍候...">
     <!-- Main Content -->
-    <div class="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
+    <div class="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">
         <!-- Left: Rules -->
         <RulesPanel
         :ceid-match-mode="ceidMatchMode"
@@ -53,7 +33,15 @@
         @update:logContent="logContent = $event"
         @ready="handleReady"
         @scroll="handleScroll"
-      />
+      >
+        <template #header-actions>
+          <div class="flex items-center gap-2">
+            <el-button type="danger" plain @click="clearAllData" size="small">清空数据</el-button>
+            <el-button type="primary" @click="triggerUpload" size="small">加载日志文件</el-button>
+            <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" @change="onFileSelected" />
+          </div>
+        </template>
+      </LogViewerPanel>
 
       <!-- Right: Timeline -->
       <TimelinePanel
@@ -97,8 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch } from 'vue'
-import { Calendar } from '@element-plus/icons-vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState, Range, Text } from '@codemirror/state'
@@ -113,8 +100,13 @@ import SxFyRuleDialog from './log-timeline/components/SxFyRuleDialog.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
 
 const loading = ref(false)
+const pageRoot = ref<HTMLDivElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const jsonFileInput = ref<HTMLInputElement | null>(null)
+
+let mainContentElement: HTMLElement | null = null
+let previousMainPadding = ''
+let previousMainPaddingVariable = ''
 
 const importDialogVisible = ref(false)
 const importText = ref('')
@@ -607,6 +599,44 @@ const triggerUpload = () => {
   fileInput.value?.click()
 }
 
+const applyPagePadding = () => {
+  const nextMainElement = pageRoot.value?.closest('.el-main')
+  if (!(nextMainElement instanceof HTMLElement)) {
+    return
+  }
+
+  mainContentElement = nextMainElement
+  previousMainPadding = nextMainElement.style.padding
+  previousMainPaddingVariable = nextMainElement.style.getPropertyValue('--el-main-padding')
+
+  nextMainElement.style.padding = '10px'
+  nextMainElement.style.setProperty('--el-main-padding', '10px')
+}
+
+const restorePagePadding = () => {
+  if (!mainContentElement) {
+    return
+  }
+
+  mainContentElement.style.padding = previousMainPadding
+
+  if (previousMainPaddingVariable) {
+    mainContentElement.style.setProperty('--el-main-padding', previousMainPaddingVariable)
+  } else {
+    mainContentElement.style.removeProperty('--el-main-padding')
+  }
+
+  mainContentElement = null
+}
+
+onMounted(() => {
+  applyPagePadding()
+})
+
+onUnmounted(() => {
+  restorePagePadding()
+})
+
 const onFileSelected = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -691,7 +721,10 @@ const clearAllData = () => {
   }).then(() => {
     ceidMatchMode.value = 'S6F11'
     rulesList.value = []
-    sxfyList.value = []
+    sxfyList.value = [
+      { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true, desc: 'RCMD' },
+      { id: 'default-s7f20', s: 7, f: 20, keyPos: '', color: '#8b5cf6', enabled: true, desc: 'RecipeList' }
+    ]
     logContent.value = null
     timelineData.value = []
     selectedTimelineItemKeys.value = []
