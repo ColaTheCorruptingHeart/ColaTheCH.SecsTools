@@ -38,7 +38,7 @@
           <div class="flex items-center gap-2">
             <el-button type="danger" plain @click="clearAllData" size="small">清空数据</el-button>
             <el-button type="primary" @click="triggerUpload" size="small">加载日志文件</el-button>
-            <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" @change="onFileSelected" />
+            <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" multiple @change="onFileSelected" />
           </div>
         </template>
       </LogViewerPanel>
@@ -90,7 +90,6 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
-import { analyzeLogTimeline } from './log-timeline/parser'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
@@ -104,9 +103,32 @@ const pageRoot = ref<HTMLDivElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const jsonFileInput = ref<HTMLInputElement | null>(null)
 
+const MAX_IMPORT_BYTES = 20 * 1024 * 1024
+const MAX_IMPORT_LINES = 150_000
+
+type LogTimelineWorkerSuccessMessage = {
+  type: 'success'
+  timeline: TimelineItem[]
+}
+
+type LogTimelineWorkerErrorMessage = {
+  type: 'error'
+  error: string
+}
+
+type LogTimelineWorkerResponse = LogTimelineWorkerSuccessMessage | LogTimelineWorkerErrorMessage
+
+type LogTimelineWorkerRequest = {
+  logContent: string
+  rulesList: RuleItem[]
+  sxfyList: SxFyRuleItem[]
+  ceidMatchMode: CeidMatchMode
+}
+
 let mainContentElement: HTMLElement | null = null
 let previousMainPadding = ''
 let previousMainPaddingVariable = ''
+let parseRequestVersion = 0
 
 const importDialogVisible = ref(false)
 const importText = ref('')
@@ -140,6 +162,105 @@ const exportSelectedOnly = ref(false)
 const selectedTimelineItemKeys = ref<string[]>([])
 
 const viewRef = shallowRef<EditorView>()
+
+const countLines = (text: string) => {
+  if (!text) return 0
+
+  let lineCount = 1
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 10) {
+      lineCount += 1
+    }
+  }
+
+  return lineCount
+}
+
+const sortFilesByName = (files: File[]) => {
+  return [...files].sort((left, right) => {
+    if (left.name < right.name) return -1
+    if (left.name > right.name) return 1
+    return 0
+  })
+}
+
+const mergeLogTexts = (texts: string[]) => {
+  const mergedParts: string[] = []
+
+  texts.forEach((text, index) => {
+    if (index > 0 && mergedParts.length > 0) {
+      const previous = mergedParts[mergedParts.length - 1] || ''
+      if (!previous.endsWith('\n')) {
+        mergedParts.push('\n')
+      }
+    }
+
+    mergedParts.push(text)
+  })
+
+  return mergedParts.join('')
+}
+
+const readAndMergeLogFiles = async (files: File[]) => {
+  const sortedFiles = sortFilesByName(files)
+  const totalBytes = sortedFiles.reduce((sum, file) => sum + file.size, 0)
+
+  if (totalBytes > MAX_IMPORT_BYTES) {
+    throw new Error(`日志文件总大小超过限制（${(MAX_IMPORT_BYTES / 1024 / 1024).toFixed(0)} MB），请拆分后再导入`)
+  }
+
+  const texts: string[] = []
+  let totalLines = 0
+
+  for (const file of sortedFiles) {
+    const text = await file.text()
+    totalLines += countLines(text)
+
+    if (totalLines > MAX_IMPORT_LINES) {
+      throw new Error(`日志总行数超过限制（${MAX_IMPORT_LINES.toLocaleString()} 行），请拆分后再导入`)
+    }
+
+    texts.push(text)
+  }
+
+  return {
+    mergedText: mergeLogTexts(texts),
+    fileCount: sortedFiles.length
+  }
+}
+
+const runLogTimelineWorker = (request: LogTimelineWorkerRequest) => {
+  return new Promise<LogTimelineWorkerResponse>((resolve, reject) => {
+    const worker = new Worker(new URL('./logTimeline.worker.ts', import.meta.url), { type: 'module' })
+
+    const cleanup = () => {
+      worker.onmessage = null
+      worker.onerror = null
+      worker.terminate()
+    }
+
+    worker.onmessage = (event: MessageEvent<LogTimelineWorkerResponse>) => {
+      cleanup()
+      resolve(event.data)
+    }
+
+    worker.onerror = (event) => {
+      cleanup()
+      reject(new Error(event.message || '日志解析失败'))
+    }
+
+    worker.postMessage(request)
+  })
+}
+
+const createParseWorkerRequest = (currentLogContent: string): LogTimelineWorkerRequest => {
+  return {
+    logContent: currentLogContent,
+    rulesList: rulesList.value.map(rule => ({ ...rule })),
+    sxfyList: sxfyList.value.map(rule => ({ ...rule })),
+    ceidMatchMode: ceidMatchMode.value
+  }
+}
 
 const ceidColorMap = computed(() => {
   return new Map(rulesList.value.map(rule => [rule.ceid, rule.color]))
@@ -638,13 +759,16 @@ onUnmounted(() => {
 })
 
 const onFileSelected = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+  const files = Array.from((e.target as HTMLInputElement).files || [])
+  if (files.length === 0) return
 
   loading.value = true
+  parseRequestVersion += 1
 
   // Reset existing
+  logContent.value = null
   timelineData.value = []
+  selectedTimelineItemKeys.value = []
   if (viewRef.value) {
     viewRef.value.dispatch({
         effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
@@ -654,8 +778,14 @@ const onFileSelected = async (e: Event) => {
   // Use timeout to allow loading UI to render
   setTimeout(async () => {
     try {
-      const text = await file.text()
-      logContent.value = text
+      const { mergedText, fileCount } = await readAndMergeLogFiles(files)
+      logContent.value = mergedText
+
+      if (fileCount > 1) {
+        ElMessage.success(`已按文件名顺序加载并拼接 ${fileCount} 个日志文件`)
+      } else {
+        ElMessage.success('日志文件加载完成')
+      }
 
       // Allow CodeMirror to render the doc first before applying decorations
       setTimeout(() => {
@@ -719,6 +849,7 @@ const clearAllData = () => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
+    parseRequestVersion += 1
     ceidMatchMode.value = 'S6F11'
     rulesList.value = []
     sxfyList.value = [
@@ -744,11 +875,22 @@ const clearAllData = () => {
 const applyRulesAndParse = () => {
   if (!logContent.value) return
   const currentLogContent = logContent.value
+  const requestVersion = ++parseRequestVersion
   loading.value = true
 
-  setTimeout(() => {
+  setTimeout(async () => {
     try {
-      timelineData.value = analyzeLogTimeline(currentLogContent, rulesList.value, sxfyList.value, ceidMatchMode.value)
+      const response = await runLogTimelineWorker(createParseWorkerRequest(currentLogContent))
+
+      if (requestVersion !== parseRequestVersion) {
+        return
+      }
+
+      if (response.type === 'error') {
+        throw new Error(response.error)
+      }
+
+      timelineData.value = response.timeline
       selectedTimelineItemKeys.value = []
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
@@ -769,9 +911,13 @@ const applyRulesAndParse = () => {
         })
       }
     } catch (err: unknown) {
-      ElMessage.error('分析过程中出错: ' + getErrorMessage(err))
+      if (requestVersion === parseRequestVersion) {
+        ElMessage.error('分析过程中出错: ' + getErrorMessage(err))
+      }
     } finally {
-      loading.value = false
+      if (requestVersion === parseRequestVersion) {
+        loading.value = false
+      }
     }
   }, 100)
 }
