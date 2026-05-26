@@ -1,0 +1,61 @@
+name: Feature Request
+description: 提出一个新功能或改进建议
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎提交功能建议。请尽量说明真实场景、现有痛点和期望收益，避免只描述一个结论式需求。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 背景与痛点
+      description: 你当前遇到的问题是什么，为什么现有功能不够用
+      placeholder: 请说明具体工程场景，而不是只写“希望支持某功能”
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 你希望新增或修改什么能力
+      placeholder: 描述你期望的交互、输入输出或行为变化
+    validations:
+      required: true
+
+  - type: textarea
+    id: value
+    attributes:
+      label: 预期价值
+      description: 这个改动能解决什么问题，适合哪些用户或场景
+      placeholder: 对调试效率、可维护性、准确率或易用性的提升
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 你尝试过哪些替代方案，或者当前如何绕过该问题
+      placeholder: 没有也可以说明
+
+  - type: input
+    id: related-tool
+    attributes:
+      label: 相关工具
+      description: 如果与现有工具相关，请写出对应工具名称
+      placeholder: 例如：SECS SML 格式化
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前检查
+      options:
+        - label: 我已搜索现有 Issue，确认没有重复建议
+          required: true
+        - label: 这个建议与仓库当前目标相关，而不是完全无关的扩展
+          required: true

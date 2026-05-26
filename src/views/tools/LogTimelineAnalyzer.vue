@@ -1,27 +1,7 @@
 <template>
-  <div class="h-full flex flex-col gap-4" v-loading="loading" element-loading-text="正在解析日志文件，请稍候...">
-    <!-- Header -->
-    <div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-4 flex-none">
-       <div class="flex items-center justify-between">
-           <div class="flex items-center gap-2">
-               <div class="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                   <el-icon class="text-blue-500 text-xl"><Calendar /></el-icon>
-               </div>
-               <div>
-                   <h2 class="text-lg font-semibold text-slate-800 dark:text-gray-100 m-0">SECS日志时间线分析</h2>
-                   <p class="text-xs text-slate-500 dark:text-gray-400 m-0 mt-0.5">SECS日志解析，提取并在时间线呈现关键CEID与事件。</p>
-               </div>
-           </div>
-           <div class="flex items-center gap-2">
-               <el-button type="danger" plain @click="clearAllData">清空数据</el-button>
-               <el-button type="primary" @click="triggerUpload">加载日志文件</el-button>
-               <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" @change="onFileSelected" />
-           </div>
-       </div>
-    </div>
-
+  <div ref="pageRoot" class="h-full flex flex-col gap-4" v-loading="loading" element-loading-text="正在解析日志文件，请稍候...">
     <!-- Main Content -->
-    <div class="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">
+    <div class="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">
         <!-- Left: Rules -->
         <RulesPanel
         :ceid-match-mode="ceidMatchMode"
@@ -45,15 +25,24 @@
       <LogViewerPanel
         :log-content="logContent"
         :extensions="extensions"
-        :marker-items="filteredTimelineData"
+        :marker-items="renderedMarkerItems"
         :bottom-offset="scrollInfo.bottomOffset"
         :has-view="Boolean(viewRef)"
+        :performance-hint="logViewerPerformanceHint"
         :get-marker-color="getMarkerColor"
         :get-scroll-marker-top="getScrollMarkerTop"
         @update:logContent="logContent = $event"
         @ready="handleReady"
         @scroll="handleScroll"
-      />
+      >
+        <template #header-actions>
+          <div class="flex items-center gap-2">
+            <el-button type="danger" plain @click="clearAllData" size="small">清空数据</el-button>
+            <el-button type="primary" @click="triggerUpload" size="small">加载日志文件</el-button>
+            <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" multiple @change="onFileSelected" />
+          </div>
+        </template>
+      </LogViewerPanel>
 
       <!-- Right: Timeline -->
       <TimelinePanel
@@ -97,13 +86,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef, computed, watch } from 'vue'
-import { Calendar } from '@element-plus/icons-vue'
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
-import { analyzeLogTimeline } from './log-timeline/parser'
+import { LOG_TIMELINE_LIMITS } from './log-timeline/config'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
@@ -113,8 +101,33 @@ import SxFyRuleDialog from './log-timeline/components/SxFyRuleDialog.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
 
 const loading = ref(false)
+const pageRoot = ref<HTMLDivElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const jsonFileInput = ref<HTMLInputElement | null>(null)
+
+type LogTimelineWorkerSuccessMessage = {
+  type: 'success'
+  timeline: TimelineItem[]
+}
+
+type LogTimelineWorkerErrorMessage = {
+  type: 'error'
+  error: string
+}
+
+type LogTimelineWorkerResponse = LogTimelineWorkerSuccessMessage | LogTimelineWorkerErrorMessage
+
+type LogTimelineWorkerRequest = {
+  logContent: string
+  rulesList: RuleItem[]
+  sxfyList: SxFyRuleItem[]
+  ceidMatchMode: CeidMatchMode
+}
+
+let mainContentElement: HTMLElement | null = null
+let previousMainPadding = ''
+let previousMainPaddingVariable = ''
+let parseRequestVersion = 0
 
 const importDialogVisible = ref(false)
 const importText = ref('')
@@ -148,6 +161,105 @@ const exportSelectedOnly = ref(false)
 const selectedTimelineItemKeys = ref<string[]>([])
 
 const viewRef = shallowRef<EditorView>()
+
+const countLines = (text: string) => {
+  if (!text) return 0
+
+  let lineCount = 1
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 10) {
+      lineCount += 1
+    }
+  }
+
+  return lineCount
+}
+
+const sortFilesByName = (files: File[]) => {
+  return [...files].sort((left, right) => {
+    if (left.name < right.name) return -1
+    if (left.name > right.name) return 1
+    return 0
+  })
+}
+
+const mergeLogTexts = (texts: string[]) => {
+  const mergedParts: string[] = []
+
+  texts.forEach((text, index) => {
+    if (index > 0 && mergedParts.length > 0) {
+      const previous = mergedParts[mergedParts.length - 1] || ''
+      if (!previous.endsWith('\n')) {
+        mergedParts.push('\n')
+      }
+    }
+
+    mergedParts.push(text)
+  })
+
+  return mergedParts.join('')
+}
+
+const readAndMergeLogFiles = async (files: File[]) => {
+  const sortedFiles = sortFilesByName(files)
+  const totalBytes = sortedFiles.reduce((sum, file) => sum + file.size, 0)
+
+  if (totalBytes > LOG_TIMELINE_LIMITS.importMaxBytes) {
+    throw new Error(`日志文件总大小超过限制（${(LOG_TIMELINE_LIMITS.importMaxBytes / 1024 / 1024).toFixed(0)} MB），请拆分后再导入`)
+  }
+
+  const texts: string[] = []
+  let totalLines = 0
+
+  for (const file of sortedFiles) {
+    const text = await file.text()
+    totalLines += countLines(text)
+
+    if (totalLines > LOG_TIMELINE_LIMITS.importMaxLines) {
+      throw new Error(`日志总行数超过限制（${LOG_TIMELINE_LIMITS.importMaxLines.toLocaleString()} 行），请拆分后再导入`)
+    }
+
+    texts.push(text)
+  }
+
+  return {
+    mergedText: mergeLogTexts(texts),
+    fileCount: sortedFiles.length
+  }
+}
+
+const runLogTimelineWorker = (request: LogTimelineWorkerRequest) => {
+  return new Promise<LogTimelineWorkerResponse>((resolve, reject) => {
+    const worker = new Worker(new URL('./logTimeline.worker.ts', import.meta.url), { type: 'module' })
+
+    const cleanup = () => {
+      worker.onmessage = null
+      worker.onerror = null
+      worker.terminate()
+    }
+
+    worker.onmessage = (event: MessageEvent<LogTimelineWorkerResponse>) => {
+      cleanup()
+      resolve(event.data)
+    }
+
+    worker.onerror = (event) => {
+      cleanup()
+      reject(new Error(event.message || '日志解析失败'))
+    }
+
+    worker.postMessage(request)
+  })
+}
+
+const createParseWorkerRequest = (currentLogContent: string): LogTimelineWorkerRequest => {
+  return {
+    logContent: currentLogContent,
+    rulesList: rulesList.value.map(rule => ({ ...rule })),
+    sxfyList: sxfyList.value.map(rule => ({ ...rule })),
+    ceidMatchMode: ceidMatchMode.value
+  }
+}
 
 const ceidColorMap = computed(() => {
   return new Map(rulesList.value.map(rule => [rule.ceid, rule.color]))
@@ -222,6 +334,60 @@ const filteredTimelineData = computed(() => {
     }
     return true
   })
+})
+
+const highlightDisabled = computed(() => {
+  return filteredTimelineData.value.length > LOG_TIMELINE_LIMITS.highlightDecorationMaxCount
+})
+
+const sampleTimelineItems = (items: TimelineItem[], limit: number) => {
+  if (items.length <= limit) {
+    return items
+  }
+
+  const result: TimelineItem[] = []
+  const lastIndex = items.length - 1
+
+  for (let index = 0; index < limit; index += 1) {
+    const sampleIndex = Math.min(lastIndex, Math.round((index * lastIndex) / Math.max(1, limit - 1)))
+    const nextItem = items[sampleIndex]
+
+    if (!nextItem) {
+      continue
+    }
+
+    const previousItem = result[result.length - 1]
+
+    if (!previousItem || getTimelineItemKey(previousItem) !== getTimelineItemKey(nextItem)) {
+      result.push(nextItem)
+    }
+  }
+
+  return result
+}
+
+const renderedMarkerItems = computed(() => {
+  return sampleTimelineItems(filteredTimelineData.value, LOG_TIMELINE_LIMITS.scrollMarkerSampleMaxCount)
+})
+
+const markerSamplingEnabled = computed(() => {
+  return renderedMarkerItems.value.length < filteredTimelineData.value.length
+})
+
+const logViewerPerformanceHint = computed(() => {
+  if (highlightDisabled.value && markerSamplingEnabled.value) {
+    return '命中较多，已关闭行高亮并采样滚动标记'
+  }
+
+  if (highlightDisabled.value) {
+    return '命中较多，已关闭行高亮'
+  }
+
+  if (markerSamplingEnabled.value) {
+    return '命中较多，已采样滚动标记'
+  }
+
+  return ''
 })
 
 const getTimelineItemKey = (item: TimelineItem) => {
@@ -425,7 +591,7 @@ const removeSxFyRule = (index: number) => {
 const updateHighlights = () => {
   if (!viewRef.value) return
 
-  if (filteredTimelineData.value.length === 0) {
+  if (filteredTimelineData.value.length === 0 || highlightDisabled.value) {
     viewRef.value.dispatch({
       effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
     })
@@ -596,6 +762,7 @@ const handleReady = (payload: { view: EditorView }) => {
   if (payload.view && payload.view.state) {
     editorTotalLines.value = payload.view.state.doc.lines
     syncScrollGeometry(payload.view)
+    updateHighlights()
   }
 }
 
@@ -607,14 +774,55 @@ const triggerUpload = () => {
   fileInput.value?.click()
 }
 
+const applyPagePadding = () => {
+  const nextMainElement = pageRoot.value?.closest('.el-main')
+  if (!(nextMainElement instanceof HTMLElement)) {
+    return
+  }
+
+  mainContentElement = nextMainElement
+  previousMainPadding = nextMainElement.style.padding
+  previousMainPaddingVariable = nextMainElement.style.getPropertyValue('--el-main-padding')
+
+  nextMainElement.style.padding = '10px'
+  nextMainElement.style.setProperty('--el-main-padding', '10px')
+}
+
+const restorePagePadding = () => {
+  if (!mainContentElement) {
+    return
+  }
+
+  mainContentElement.style.padding = previousMainPadding
+
+  if (previousMainPaddingVariable) {
+    mainContentElement.style.setProperty('--el-main-padding', previousMainPaddingVariable)
+  } else {
+    mainContentElement.style.removeProperty('--el-main-padding')
+  }
+
+  mainContentElement = null
+}
+
+onMounted(() => {
+  applyPagePadding()
+})
+
+onUnmounted(() => {
+  restorePagePadding()
+})
+
 const onFileSelected = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+  const files = Array.from((e.target as HTMLInputElement).files || [])
+  if (files.length === 0) return
 
   loading.value = true
+  parseRequestVersion += 1
 
   // Reset existing
+  logContent.value = null
   timelineData.value = []
+  selectedTimelineItemKeys.value = []
   if (viewRef.value) {
     viewRef.value.dispatch({
         effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
@@ -624,8 +832,14 @@ const onFileSelected = async (e: Event) => {
   // Use timeout to allow loading UI to render
   setTimeout(async () => {
     try {
-      const text = await file.text()
-      logContent.value = text
+      const { mergedText, fileCount } = await readAndMergeLogFiles(files)
+      logContent.value = mergedText
+
+      if (fileCount > 1) {
+        ElMessage.success(`已按文件名顺序加载并拼接 ${fileCount} 个日志文件`)
+      } else {
+        ElMessage.success('日志文件加载完成')
+      }
 
       // Allow CodeMirror to render the doc first before applying decorations
       setTimeout(() => {
@@ -689,9 +903,13 @@ const clearAllData = () => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
+    parseRequestVersion += 1
     ceidMatchMode.value = 'S6F11'
     rulesList.value = []
-    sxfyList.value = []
+    sxfyList.value = [
+      { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true, desc: 'RCMD' },
+      { id: 'default-s7f20', s: 7, f: 20, keyPos: '', color: '#8b5cf6', enabled: true, desc: 'RecipeList' }
+    ]
     logContent.value = null
     timelineData.value = []
     selectedTimelineItemKeys.value = []
@@ -711,34 +929,40 @@ const clearAllData = () => {
 const applyRulesAndParse = () => {
   if (!logContent.value) return
   const currentLogContent = logContent.value
+  const requestVersion = ++parseRequestVersion
   loading.value = true
 
-  setTimeout(() => {
+  setTimeout(async () => {
     try {
-      timelineData.value = analyzeLogTimeline(currentLogContent, rulesList.value, sxfyList.value, ceidMatchMode.value)
+      const response = await runLogTimelineWorker(createParseWorkerRequest(currentLogContent))
+
+      if (requestVersion !== parseRequestVersion) {
+        return
+      }
+
+      if (response.type === 'error') {
+        throw new Error(response.error)
+      }
+
+      timelineData.value = response.timeline
       selectedTimelineItemKeys.value = []
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
       }
 
-      // Apply Highlights
-      if (viewRef.value && filteredTimelineData.value.length > 0) {
+      if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
         syncScrollGeometry(viewRef.value)
-        const doc = viewRef.value.state.doc
-
-        viewRef.value.dispatch({
-          effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(filteredTimelineData.value, doc)))
-        })
-      } else if (viewRef.value && filteredTimelineData.value.length === 0) {
-        viewRef.value.dispatch({
-          effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
-        })
+        updateHighlights()
       }
     } catch (err: unknown) {
-      ElMessage.error('分析过程中出错: ' + getErrorMessage(err))
+      if (requestVersion === parseRequestVersion) {
+        ElMessage.error('分析过程中出错: ' + getErrorMessage(err))
+      }
     } finally {
-      loading.value = false
+      if (requestVersion === parseRequestVersion) {
+        loading.value = false
+      }
     }
   }, 100)
 }

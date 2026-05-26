@@ -85,11 +85,29 @@
 
     <el-container class="flex flex-col overflow-hidden bg-white">
       <el-header class="bg-white border-b border-slate-200 flex items-center px-6 h-14 z-10 sticky top-0">
-        <div class="flex items-center w-full">
+        <div class="flex items-center justify-between gap-4 w-full">
           <el-breadcrumb separator="/">
             <el-breadcrumb-item :to="{ path: '/' }" class="font-medium text-slate-800">主页</el-breadcrumb-item>
             <el-breadcrumb-item v-if="currentRouteName && currentRouteName !== 'Home'">{{ currentRouteName }}</el-breadcrumb-item>
           </el-breadcrumb>
+
+          <a
+            href="https://github.com/ColaTheCorruptingHeart/ColaTheCH.SecsTools"
+            target="_blank"
+            rel="noreferrer"
+            class="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+            aria-label="GitHub 仓库"
+            title="GitHub 仓库"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              class="h-4 w-4 fill-current"
+            >
+              <path d="M12 2C6.477 2 2 6.589 2 12.248c0 4.526 2.865 8.367 6.839 9.722.5.095.683-.223.683-.495 0-.245-.009-.894-.014-1.754-2.782.617-3.369-1.385-3.369-1.385-.455-1.183-1.11-1.498-1.11-1.498-.908-.637.069-.624.069-.624 1.004.072 1.532 1.056 1.532 1.056.892 1.565 2.341 1.113 2.91.851.091-.664.349-1.113.635-1.369-2.22-.259-4.555-1.139-4.555-5.072 0-1.121.39-2.038 1.029-2.756-.103-.259-.446-1.301.098-2.712 0 0 .84-.277 2.75 1.053A9.38 9.38 0 0 1 12 6.82c.85.004 1.706.118 2.504.347 1.909-1.33 2.748-1.053 2.748-1.053.545 1.411.202 2.453.1 2.712.64.718 1.027 1.635 1.027 2.756 0 3.943-2.339 4.81-4.566 5.064.359.319.679.947.679 1.908 0 1.378-.012 2.489-.012 2.828 0 .274.18.595.688.494C19.138 20.611 22 16.772 22 12.248 22 6.589 17.523 2 12 2Z" />
+            </svg>
+            <span>GitHub</span>
+          </a>
         </div>
       </el-header>
 
