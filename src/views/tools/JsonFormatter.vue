@@ -1,31 +1,14 @@
 <template>
   <div class="h-full flex flex-col gap-4">
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div class="flex items-center gap-2">
-          <div class="p-2 bg-emerald-50 rounded-lg">
-            <el-icon class="text-emerald-500 text-xl"><ScaleToOriginal /></el-icon>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-slate-800 m-0">JSON 格式化工具</h2>
-            <p class="text-xs text-slate-500 m-0 mt-0.5">格式化、校验并压缩 JSON 数据</p>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-          <el-button size="small" type="primary" class="!rounded-md shadow-sm" @click="formatJson">格式化 (2空格)</el-button>
-          <el-button size="small" class="!rounded-md" @click="formatJson4">格式化 (4空格)</el-button>
-          <el-button size="small" class="!rounded-md" @click="compressJson">压缩</el-button>
-          <div class="w-px h-4 bg-slate-300 mx-1"></div>
-          <el-button size="small" type="danger" plain class="!rounded-md" @click="clear">清空</el-button>
-        </div>
-      </div>
-    </div>
-
     <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 h-0 min-h-[500px]">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between shrink-0">
           <span class="text-sm font-medium text-slate-600">原数据输入</span>
+          <div class="flex items-center gap-2">
+            <el-button size="small" type="primary" class="!rounded-md shadow-sm" @click="formatJson">格式化 (2空格)</el-button>
+            <el-button size="small" class="!rounded-md" @click="compressJson">压缩</el-button>
+            <el-button size="small" type="danger" plain class="!rounded-md" @click="clear">清空</el-button>
+          </div>
         </div>
         <el-input
           v-model="sourceJson"
@@ -89,7 +72,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ScaleToOriginal, DocumentCopy } from '@element-plus/icons-vue'
+import { DocumentCopy } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import VueJsonPretty from 'vue-json-pretty'
 import 'vue-json-pretty/lib/styles.css'

@@ -1,42 +1,14 @@
 <template>
   <div class="h-full flex flex-col gap-4" v-loading="loading" :element-loading-text="loadingText">
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div class="flex items-center gap-2">
-          <div class="p-2 bg-amber-50 rounded-lg">
-            <el-icon class="text-amber-500 text-xl"><Document /></el-icon>
-          </div>
-          <div>
-            <h2 class="text-lg font-semibold text-slate-800 m-0">SECS SML 格式化工具</h2>
-            <p class="text-xs text-slate-500 m-0 mt-0.5">粘贴原始报文日志，自动输出简洁层级格式</p>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-100 flex-wrap">
-          <el-button size="small" type="primary" class="!rounded-md shadow-sm" :loading="loading" :disabled="loading" @click="onFormat">格式化</el-button>
-          <el-button size="small" class="!rounded-md" :disabled="loading || !formattedText" @click="onCopy">复制结果</el-button>
-          <div class="w-px h-4 bg-slate-300 mx-1"></div>
-          <el-button size="small" type="danger" plain class="!rounded-md" :disabled="loading" @click="onClear">清空</el-button>
-
-          <div class="flex items-center ml-2 border-l border-slate-300 pl-3">
-            <el-input
-              v-model="locatePathInput"
-              size="small"
-              placeholder="输入路径，如 [0][2][2]"
-              :disabled="loading"
-              @keyup.enter="onLocateByPath"
-              class="w-40 mr-2"
-            />
-            <el-button size="small" class="!rounded-md" :disabled="loading" @click="onLocateByPath">定位</el-button>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
           <span class="text-sm font-medium text-slate-600">原始 SECS 日志</span>
+          <div class="flex items-center gap-2">
+            <el-button size="small" type="primary" class="!rounded-md shadow-sm" :loading="loading" :disabled="loading" @click="onFormat">格式化</el-button>
+            <el-button size="small" type="danger" plain class="!rounded-md" :disabled="loading" @click="onClear">清空</el-button>
+          </div>
         </div>
         <div class="flex-1 overflow-hidden relative">
           <textarea
@@ -45,16 +17,31 @@
             placeholder="请输入原始日志..."
             :disabled="loading"
             spellcheck="false"
+            wrap="off"
           />
         </div>
       </div>
 
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
-        <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+        <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span class="text-sm font-medium text-slate-600">格式化结果</span>
-          <span class="text-xs text-slate-400 font-mono hidden sm:inline-block max-w-[200px] truncate" :title="selectedPath">
-            {{ selectedPath ? ('当前位置：' + selectedPath) : '点击任意结果行查看路径，双击可复制路径' }}
-          </span>
+          <div class="flex items-center gap-2 flex-wrap sm:justify-end">
+            <span v-if="selectedPath" class="text-xs text-slate-400 font-mono max-w-[200px] truncate" :title="selectedPath">
+              {{ '当前位置：' + selectedPath }}
+            </span>
+            <el-button size="small" class="!rounded-md" :disabled="loading || !formattedText" @click="onCopy">复制结果</el-button>
+            <div class="flex items-center">
+              <el-input
+                v-model="locatePathInput"
+                size="small"
+                placeholder="输入路径，如 [0][2][2]"
+                :disabled="loading"
+                @keyup.enter="onLocateByPath"
+                class="w-40 mr-2"
+              />
+              <el-button size="small" class="!rounded-md" :disabled="loading" @click="onLocateByPath">定位</el-button>
+            </div>
+          </div>
         </div>
 
         <div class="flex-1 overflow-hidden relative bg-slate-50/30">
@@ -69,9 +56,6 @@
             结果将在此显示...
           </div>
         </div>
-        <div class="bg-slate-50 border-t border-slate-200 px-4 py-1.5 flex items-center justify-between shrink-0">
-          <span class="text-xs text-slate-500">提示：点击结果行可查看路径并定位，双击可直接复制路径；也可输入路径直接定位。</span>
-        </div>
       </div>
     </div>
   </div>
@@ -80,7 +64,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, shallowRef } from 'vue'
 import { Codemirror } from 'vue-codemirror'
-import { Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { Compartment, EditorState } from '@codemirror/state'
 import { Decoration, EditorView, lineNumbers } from '@codemirror/view'
@@ -416,6 +399,9 @@ async function onCopy() {
   line-height: 1.6;
   background-color: transparent;
   resize: none;
+  overflow: auto;
+  overflow-wrap: normal;
+  white-space: pre;
 }
 
 .source-textarea:disabled {
