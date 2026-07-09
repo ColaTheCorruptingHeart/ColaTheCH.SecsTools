@@ -20,11 +20,10 @@
       </div>
     </div>
 
-    <div class="flex-1 grid grid-cols-1 xl:grid-cols-3 gap-4 min-h-0">
+    <div class="flex-1 grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,3fr)_minmax(0,4fr)] gap-4 min-h-0">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
           <span class="text-sm font-medium text-slate-600">SVNAME列表</span>
-          <span class="text-xs text-slate-400">支持单列 SVNAME，或带 SVNAME 列的 CSV/Tab</span>
         </div>
         <div class="flex-1 overflow-hidden relative">
           <textarea
