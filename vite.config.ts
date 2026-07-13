@@ -1,25 +1,41 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import plugin from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+
 // https://vitejs.dev/config/
 export default defineConfig({
+    define: {
+        __APP_VERSION__: JSON.stringify(packageJson.version),
+    },
     plugins: [
         plugin(),
         tailwindcss(),
         VitePWA({
             registerType: 'autoUpdate',
+            injectRegister: false,
             workbox: {
-                // 用于缓存所有常见的静态资源
-                globPatterns: ['**/*.{js,css,html,ico,png,svg,json,vue,txt,woff2}']
+                // Keep hashed static assets cached, but do not precache index.html.
+                // A stale entry HTML can point at removed /assets/*.js files after deploy.
+                globPatterns: ['**/*.{js,css,ico,png,svg,json,txt,woff2}'],
+                cleanupOutdatedCaches: true,
+                navigateFallback: undefined,
+                navigateFallbackDenylist: [
+                    /^\/assets\//,
+                    /^\/registerSW\.js$/,
+                    /^\/sw\.js$/,
+                    /^\/workbox-.*\.js$/,
+                ],
             },
             manifest: {
                 name: 'SECS Tools',
                 short_name: 'SECS Tools',
                 description: 'Various SECS tools including Log Timeline Analyzer',
                 theme_color: '#ffffff',
-                // 可以放一个应用图标，需在 public 下提供 icon
+                // Add app icons under public/ when needed.
                 // icons: [
                 //   {
                 //     src: '/icon.png',
