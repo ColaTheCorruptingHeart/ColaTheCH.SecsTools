@@ -8,7 +8,15 @@
         <div class="w-8 h-8 rounded-md bg-blue-100/50 flex shrink-0 items-center justify-center text-blue-600 transition-all">
           <el-icon :size="18"><component :is="Icons.Grid" /></el-icon>
         </div>
-        <span v-if="!isCollapse" class="ml-3 font-bold text-slate-800 shrink-0 whitespace-nowrap text-base tracking-wide">SECS Tools</span>
+        <div v-if="!isCollapse" class="ml-3 flex shrink-0 items-start gap-1.5 whitespace-nowrap">
+          <span class="font-bold text-slate-800 text-base tracking-wide leading-5">SECS Tools</span>
+          <span
+            class="-mt-1 inline-flex rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] leading-none text-slate-500"
+            title="当前版本"
+          >
+            {{ appVersion }}
+          </span>
+        </div>
       </div>
 
       <!-- 将搜索栏移出 el-menu，避免受到 el-menu 样式的污染 -->
@@ -128,6 +136,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Search, HomeFilled } from '@element-plus/icons-vue'
 import * as Icons from '@element-plus/icons-vue'
 import { toolsConfig, flatTools } from '../config/tools'
+import { appVersion } from '../config/appVersion'
 
 const route = useRoute()
 const router = useRouter()
