@@ -93,7 +93,8 @@ import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
 import { LOG_TIMELINE_LIMITS } from './log-timeline/config'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
-import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
+import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
@@ -154,6 +155,7 @@ const predefineColors = ref([
 
 const logContent = ref<string | null>(null)
 const timelineData = ref<TimelineItem[]>([])
+const logMessageBlocks = ref<LogMessageBlock[]>([])
 const editorTotalLines = ref(1)
 const scrollInfo = ref({ bottomOffset: 0 })
 const exportKeepTimeLine = ref(true)
@@ -161,6 +163,7 @@ const exportSelectedOnly = ref(false)
 const selectedTimelineItemKeys = ref<string[]>([])
 
 const viewRef = shallowRef<EditorView>()
+let hoveredMessageBlockKey = ''
 
 const countLines = (text: string) => {
   if (!text) return 0
@@ -443,6 +446,110 @@ const toggleTimelineItemChecked = ({ key, checked }: { key: string, checked: boo
   selectedTimelineItemKeys.value = Array.from(nextKeys)
 }
 
+const getMessageBlockKey = (block: LogMessageBlock | null) => {
+  if (!block) {
+    return ''
+  }
+
+  return `${block.startLine}:${block.contentStartLine}:${block.endLine}`
+}
+
+const findHoveredMessageBlock = (lineNumber: number) => {
+  let left = 0
+  let right = logMessageBlocks.value.length - 1
+
+  while (left <= right) {
+    const middle = Math.floor((left + right) / 2)
+    const block = logMessageBlocks.value[middle]
+
+    if (!block) {
+      break
+    }
+
+    if (lineNumber < block.startLine) {
+      right = middle - 1
+    } else if (lineNumber > block.endLine) {
+      left = middle + 1
+    } else {
+      return block
+    }
+  }
+
+  return null
+}
+
+const getLineNumberFromMouseEvent = (event: MouseEvent, view: EditorView) => {
+  const position = view.posAtCoords({ x: event.clientX, y: event.clientY })
+  if (position == null) {
+    return -1
+  }
+
+  return view.state.doc.lineAt(position).number
+}
+
+const getHoverBlockExtension = (block: LogMessageBlock | null, doc: Text) => {
+  if (!block) {
+    return Decoration.none
+  }
+
+  const builder: Array<Range<Decoration>> = []
+  const startLine = Math.max(1, block.startLine)
+  const endLine = Math.min(doc.lines, block.endLine)
+  const blockHighlight = Decoration.line({ attributes: { class: 'cm-log-hover-block' } })
+
+  for (let lineNumber = startLine; lineNumber <= endLine; lineNumber += 1) {
+    const lineData = doc.line(lineNumber)
+    builder.push(blockHighlight.range(lineData.from, lineData.from))
+  }
+
+  return Decoration.set(builder, true)
+}
+
+const updateHoveredMessageBlock = (block: LogMessageBlock | null) => {
+  const nextKey = getMessageBlockKey(block)
+  if (nextKey === hoveredMessageBlockKey) {
+    return
+  }
+
+  hoveredMessageBlockKey = nextKey
+
+  if (!viewRef.value) {
+    return
+  }
+
+  viewRef.value.dispatch({
+    effects: hoverBlockCompartment.reconfigure(EditorView.decorations.of(getHoverBlockExtension(block, viewRef.value.state.doc)))
+  })
+}
+
+const clearHoveredMessageBlock = () => {
+  updateHoveredMessageBlock(null)
+}
+
+const rebuildLogMessageBlocks = (content: string | null) => {
+  logMessageBlocks.value = content ? buildLogMessageBlocks(splitLogLines(content)) : []
+  clearHoveredMessageBlock()
+}
+
+const handleLogMouseMove = (event: MouseEvent, view: EditorView) => {
+  const lineNumber = getLineNumberFromMouseEvent(event, view)
+  if (lineNumber < 1 || lineNumber > view.state.doc.lines) {
+    clearHoveredMessageBlock()
+    return false
+  }
+
+  const line = view.state.doc.line(lineNumber)
+  if (!line.text.trim()) {
+    clearHoveredMessageBlock()
+    return false
+  }
+
+  updateHoveredMessageBlock(findHoveredMessageBlock(lineNumber))
+  return false
+}
+
+watch(logContent, rebuildLogMessageBlocks)
+
 watch([filterSxFy, filterDesc], ([newSxFy], [oldSxFy]) => {
   if (newSxFy !== oldSxFy) {
     if (newSxFy) {
@@ -714,10 +821,15 @@ const syncScrollGeometry = (view: EditorView) => {
 
 // CodeMirror Extensions Setup
 const highlightCompartment = new Compartment()
+const hoverBlockCompartment = new Compartment()
 const baseTheme = EditorView.theme({
   ".cm-scroller": {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important',
     fontSize: '12px'
+  },
+  ".cm-log-hover-block": {
+    backgroundImage: 'linear-gradient(90deg, rgba(14, 165, 233, 0.18), rgba(14, 165, 233, 0.07)) !important',
+    boxShadow: 'inset 3px 0 0 #0ea5e9'
   }
 })
 
@@ -749,10 +861,20 @@ const extensions = [
   lineNumbers(),
   EditorState.readOnly.of(true),
   highlightCompartment.of(EditorView.decorations.of(Decoration.none)),
+  hoverBlockCompartment.of(EditorView.decorations.of(Decoration.none)),
   EditorView.updateListener.of((update) => {
     if (update.geometryChanged || update.docChanged) {
        editorTotalLines.value = update.view.state.doc.lines
        syncScrollGeometry(update.view)
+    }
+  }),
+  EditorView.domEventHandlers({
+    mousemove(event, view) {
+      return handleLogMouseMove(event, view)
+    },
+    mouseleave() {
+      clearHoveredMessageBlock()
+      return false
     }
   })
 ]
