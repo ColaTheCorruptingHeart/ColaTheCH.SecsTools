@@ -1,5 +1,14 @@
 <template>
-  <div ref="pageRoot" class="h-full flex flex-col gap-4" v-loading="loading" element-loading-text="正在解析日志文件，请稍候...">
+  <div
+    ref="pageRoot"
+    class="relative h-full flex flex-col gap-4"
+    v-loading="loading"
+    element-loading-text="正在解析日志文件，请稍候..."
+    @dragenter="handlePageDragEnter"
+    @dragover="handlePageDragOver"
+    @dragleave="handlePageDragLeave"
+    @drop="handlePageDrop"
+  >
     <!-- Main Content -->
     <div class="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">
         <!-- Left: Rules -->
@@ -89,6 +98,15 @@
       <button class="log-block-context-menu__item" type="button" @click="copyContextMenuFormattedMessageBlock">
         复制格式化消息块
       </button>
+      <button class="log-block-context-menu__item" type="button" @click="sendContextMenuMessageBlockToSecsSmlFormatter">
+        发送至SML格式化
+      </button>
+    </div>
+
+    <div v-if="isDraggingLogFiles" class="log-drop-overlay">
+      <div class="log-drop-overlay__panel">
+        松开以导入日志文件
+      </div>
     </div>
 
     <CeidImportDialog
@@ -110,6 +128,7 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState, Range, Text } from '@codemirror/state'
@@ -119,6 +138,7 @@ import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileNa
 import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
 import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import { formatSecsSml } from './secsSml'
+import { discardSecsSmlTransferText, storeSecsSmlTransferText } from './secsSmlTransfer'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
@@ -126,6 +146,7 @@ import SxFyRuleDialog from './log-timeline/components/SxFyRuleDialog.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
 
 const loading = ref(false)
+const router = useRouter()
 const pageRoot = ref<HTMLDivElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const jsonFileInput = ref<HTMLInputElement | null>(null)
@@ -182,6 +203,7 @@ const timelineData = ref<TimelineItem[]>([])
 const logMessageBlocks = ref<LogMessageBlock[]>([])
 const editorTotalLines = ref(1)
 const scrollInfo = ref({ bottomOffset: 0 })
+const isDraggingLogFiles = ref(false)
 const exportKeepTimeLine = ref(true)
 const exportSelectedOnly = ref(false)
 const selectedTimelineItemKeys = ref<string[]>([])
@@ -201,6 +223,7 @@ const messageBlockContextMenu = ref<{
 
 const viewRef = shallowRef<EditorView>()
 let hoveredMessageBlockKey = ''
+let logFileDragDepth = 0
 
 const countLines = (text: string) => {
   if (!text) return 0
@@ -578,8 +601,8 @@ const closeMessageBlockContextMenu = () => {
 }
 
 const getContextMenuPosition = (event: MouseEvent) => {
-  const menuWidth = 128
-  const menuHeight = 104
+  const menuWidth = 148
+  const menuHeight = 136
   const margin = 8
 
   return {
@@ -698,6 +721,42 @@ const copyContextMenuFormattedMessageBlock = async () => {
     ElMessage.success('格式化消息块已复制')
   } catch {
     ElMessage.error('复制失败，请手动复制')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
+const sendContextMenuMessageBlockToSecsSmlFormatter = () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法发送')
+    return
+  }
+
+  try {
+    const transferId = storeSecsSmlTransferText(text)
+    const route = router.resolve({
+      path: '/tools/secs-sml',
+      query: { source: transferId }
+    })
+    const openedWindow = window.open(route.href, '_blank')
+
+    if (!openedWindow) {
+      discardSecsSmlTransferText(transferId)
+      ElMessage.error('打开 SECS SML 格式化页面失败，请检查浏览器弹窗设置')
+      return
+    }
+
+    ElMessage.success('已发送至 SECS SML 格式化')
+  } catch {
+    ElMessage.error('发送失败，请稍后重试')
   } finally {
     closeMessageBlockContextMenu()
   }
@@ -1119,6 +1178,117 @@ const triggerUpload = () => {
   fileInput.value?.click()
 }
 
+const hasDraggedFiles = (event: DragEvent) => {
+  return Array.from(event.dataTransfer?.types || []).includes('Files')
+}
+
+const resetDragImportState = () => {
+  logFileDragDepth = 0
+  isDraggingLogFiles.value = false
+}
+
+const resetLogImportState = () => {
+  parseRequestVersion += 1
+  logContent.value = null
+  timelineData.value = []
+  selectedTimelineItemKeys.value = []
+
+  if (viewRef.value) {
+    viewRef.value.dispatch({
+      effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
+    })
+  }
+}
+
+const importLogFiles = (files: File[]) => {
+  if (files.length === 0) {
+    return
+  }
+
+  if (loading.value) {
+    ElMessage.warning('正在解析日志文件，请稍候')
+    return
+  }
+
+  loading.value = true
+  resetLogImportState()
+
+  // Allow the loading UI to render before reading and parsing large files.
+  setTimeout(async () => {
+    try {
+      const { mergedText, fileCount } = await readAndMergeLogFiles(files)
+      logContent.value = mergedText
+
+      if (fileCount > 1) {
+        ElMessage.success(`已按文件名顺序加载并拼接 ${fileCount} 个日志文件`)
+      } else {
+        ElMessage.success('日志文件加载完成')
+      }
+
+      // Allow CodeMirror to render the doc first before applying decorations.
+      setTimeout(() => {
+        applyRulesAndParse()
+      }, 100)
+    } catch (err: unknown) {
+      ElMessage.error('读取文件失败: ' + getErrorMessage(err))
+      loading.value = false
+    }
+  }, 50)
+}
+
+const handlePageDragEnter = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+  closeMessageBlockContextMenu()
+  logFileDragDepth += 1
+  isDraggingLogFiles.value = true
+}
+
+const handlePageDragOver = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = loading.value ? 'none' : 'copy'
+  }
+}
+
+const handlePageDragLeave = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+  logFileDragDepth = Math.max(0, logFileDragDepth - 1)
+
+  if (logFileDragDepth === 0) {
+    isDraggingLogFiles.value = false
+  }
+}
+
+const handlePageDrop = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+  resetDragImportState()
+
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (!files.length) {
+    ElMessage.warning('未检测到可导入的日志文件')
+    return
+  }
+
+  importLogFiles(files)
+}
+
 const applyPagePadding = () => {
   const nextMainElement = pageRoot.value?.closest('.el-main')
   if (!(nextMainElement instanceof HTMLElement)) {
@@ -1165,46 +1335,12 @@ onUnmounted(() => {
 
 const onFileSelected = async (e: Event) => {
   const files = Array.from((e.target as HTMLInputElement).files || [])
-  if (files.length === 0) return
+  importLogFiles(files)
 
-  loading.value = true
-  parseRequestVersion += 1
-
-  // Reset existing
-  logContent.value = null
-  timelineData.value = []
-  selectedTimelineItemKeys.value = []
-  if (viewRef.value) {
-    viewRef.value.dispatch({
-        effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
-    })
+  // Reset input so the same file could be selected again.
+  if (fileInput.value) {
+    fileInput.value.value = ''
   }
-
-  // Use timeout to allow loading UI to render
-  setTimeout(async () => {
-    try {
-      const { mergedText, fileCount } = await readAndMergeLogFiles(files)
-      logContent.value = mergedText
-
-      if (fileCount > 1) {
-        ElMessage.success(`已按文件名顺序加载并拼接 ${fileCount} 个日志文件`)
-      } else {
-        ElMessage.success('日志文件加载完成')
-      }
-
-      // Allow CodeMirror to render the doc first before applying decorations
-      setTimeout(() => {
-          applyRulesAndParse()
-      }, 100)
-    } catch (err: unknown) {
-      ElMessage.error('读取文件失败: ' + getErrorMessage(err))
-      loading.value = false
-    }
-    // reset input so the same file could be selected again
-    if (fileInput.value) {
-        fileInput.value.value = ''
-    }
-  }, 50)
 }
 
 const triggerJsonImport = () => {
@@ -1359,6 +1495,30 @@ const jumpToLine = (lineNumber: number) => {
 }
 :deep(.cm-scroller::-webkit-scrollbar-corner) {
   background-color: transparent;
+}
+
+.log-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed #0ea5e9;
+  border-radius: 10px;
+  background: rgba(240, 249, 255, 0.78);
+  pointer-events: none;
+}
+
+.log-drop-overlay__panel {
+  padding: 14px 18px;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0369a1;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
 }
 
 .log-block-context-menu {
