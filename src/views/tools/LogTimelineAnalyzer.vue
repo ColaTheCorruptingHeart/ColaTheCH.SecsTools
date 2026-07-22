@@ -71,6 +71,8 @@
         @update:exportKeepTimeLine="exportKeepTimeLine = $event"
         @update:exportSelectedOnly="exportSelectedOnly = $event"
         @toggleItemChecked="toggleTimelineItemChecked"
+        @timelineContextAction="handleTimelineContextAction"
+        @timelineContextMenuOpened="closeMessageBlockContextMenu"
         @jump="jumpToLine"
         @exportLogs="exportMatchedLogs"
         @exportCommandSet="exportMatchedCommandSet"
@@ -207,6 +209,7 @@ const isDraggingLogFiles = ref(false)
 const exportKeepTimeLine = ref(true)
 const exportSelectedOnly = ref(false)
 const selectedTimelineItemKeys = ref<string[]>([])
+const lastSelectedTimelineItemKey = ref<string | null>(null)
 const messageBlockContextMenu = ref<{
   visible: boolean
   left: number
@@ -494,8 +497,31 @@ const canExportTimelineItems = computed(() => {
   return Boolean(logContent.value && exportTimelineItems.value.length)
 })
 
-const toggleTimelineItemChecked = ({ key, checked }: { key: string, checked: boolean }) => {
+const toggleTimelineItemChecked = ({ key, checked, shiftKey }: { key: string, checked: boolean, shiftKey: boolean }) => {
   const nextKeys = new Set(selectedTimelineItemKeys.value)
+
+  if (shiftKey && lastSelectedTimelineItemKey.value && lastSelectedTimelineItemKey.value !== key) {
+    const orderedKeys = filteredTimelineData.value.map(getTimelineItemKey)
+    const anchorIndex = orderedKeys.indexOf(lastSelectedTimelineItemKey.value)
+    const targetIndex = orderedKeys.indexOf(key)
+
+    if (anchorIndex >= 0 && targetIndex >= 0) {
+      const startIndex = Math.min(anchorIndex, targetIndex)
+      const endIndex = Math.max(anchorIndex, targetIndex)
+
+      orderedKeys.slice(startIndex, endIndex + 1).forEach(itemKey => {
+        if (checked) {
+          nextKeys.add(itemKey)
+        } else {
+          nextKeys.delete(itemKey)
+        }
+      })
+
+      selectedTimelineItemKeys.value = Array.from(nextKeys)
+      lastSelectedTimelineItemKey.value = key
+      return
+    }
+  }
 
   if (checked) {
     nextKeys.add(key)
@@ -504,6 +530,57 @@ const toggleTimelineItemChecked = ({ key, checked }: { key: string, checked: boo
   }
 
   selectedTimelineItemKeys.value = Array.from(nextKeys)
+  lastSelectedTimelineItemKey.value = key
+}
+
+const handleTimelineContextAction = ({ action, key }: { action: 'selectAll' | 'clearAll' | 'selectSameSxFy' | 'selectSameCeid', key?: string }) => {
+  const currentItems = filteredTimelineData.value
+  const nextKeys = new Set(selectedTimelineItemKeys.value)
+
+  if (action === 'selectAll') {
+    currentItems.forEach(item => {
+      nextKeys.add(getTimelineItemKey(item))
+    })
+    const lastItem = currentItems[currentItems.length - 1]
+    selectedTimelineItemKeys.value = Array.from(nextKeys)
+    lastSelectedTimelineItemKey.value = key ?? (lastItem ? getTimelineItemKey(lastItem) : null)
+    return
+  }
+
+  if (action === 'clearAll') {
+    currentItems.forEach(item => {
+      nextKeys.delete(getTimelineItemKey(item))
+    })
+    selectedTimelineItemKeys.value = Array.from(nextKeys)
+    lastSelectedTimelineItemKey.value = null
+    return
+  }
+
+  if (!key) {
+    return
+  }
+
+  const contextItem = currentItems.find(item => getTimelineItemKey(item) === key)
+  if (!contextItem) {
+    return
+  }
+
+  if (action === 'selectSameSxFy') {
+    currentItems.forEach(item => {
+      if (item.sxFy === contextItem.sxFy) {
+        nextKeys.add(getTimelineItemKey(item))
+      }
+    })
+  } else if (action === 'selectSameCeid') {
+    currentItems.forEach(item => {
+      if (item.ceid === contextItem.ceid) {
+        nextKeys.add(getTimelineItemKey(item))
+      }
+    })
+  }
+
+  selectedTimelineItemKeys.value = Array.from(nextKeys)
+  lastSelectedTimelineItemKey.value = key
 }
 
 const getMessageBlockKey = (block: LogMessageBlock | null) => {
@@ -1192,6 +1269,7 @@ const resetLogImportState = () => {
   logContent.value = null
   timelineData.value = []
   selectedTimelineItemKeys.value = []
+  lastSelectedTimelineItemKey.value = null
 
   if (viewRef.value) {
     viewRef.value.dispatch({
@@ -1400,6 +1478,7 @@ const clearAllData = () => {
     logContent.value = null
     timelineData.value = []
     selectedTimelineItemKeys.value = []
+    lastSelectedTimelineItemKey.value = null
     exportSelectedOnly.value = false
     filterSxFy.value = ''
     filterDesc.value = []
@@ -1433,6 +1512,7 @@ const applyRulesAndParse = () => {
 
       timelineData.value = response.timeline
       selectedTimelineItemKeys.value = []
+      lastSelectedTimelineItemKey.value = null
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
       }
