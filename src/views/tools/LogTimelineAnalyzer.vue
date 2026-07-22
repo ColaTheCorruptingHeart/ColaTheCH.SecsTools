@@ -75,8 +75,19 @@
       @click.stop
       @contextmenu.prevent.stop
     >
+      <button
+        class="log-block-context-menu__item"
+        type="button"
+        :disabled="!messageBlockContextMenu.selectedText"
+        @click="copyContextMenuSelectedText"
+      >
+        复制选中内容
+      </button>
       <button class="log-block-context-menu__item" type="button" @click="copyContextMenuMessageBlock">
-        复制
+        复制消息块
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="copyContextMenuFormattedMessageBlock">
+        复制格式化消息块
       </button>
     </div>
 
@@ -107,6 +118,7 @@ import { LOG_TIMELINE_LIMITS } from './log-timeline/config'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
 import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import { formatSecsSml } from './secsSml'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
@@ -178,11 +190,13 @@ const messageBlockContextMenu = ref<{
   left: number
   top: number
   block: LogMessageBlock | null
+  selectedText: string
 }>({
   visible: false,
   left: 0,
   top: 0,
-  block: null
+  block: null,
+  selectedText: ''
 })
 
 const viewRef = shallowRef<EditorView>()
@@ -558,13 +572,14 @@ const closeMessageBlockContextMenu = () => {
     visible: false,
     left: 0,
     top: 0,
-    block: null
+    block: null,
+    selectedText: ''
   }
 }
 
 const getContextMenuPosition = (event: MouseEvent) => {
   const menuWidth = 128
-  const menuHeight = 40
+  const menuHeight = 104
   const margin = 8
 
   return {
@@ -580,6 +595,17 @@ const getMessageBlockText = (block: LogMessageBlock) => {
 
   return splitLogLines(logContent.value)
     .slice(block.startLine - 1, block.endLine)
+    .join('\n')
+}
+
+const getSelectedText = (view: EditorView) => {
+  const ranges = view.state.selection.ranges.filter(range => !range.empty)
+  if (!ranges.length) {
+    return ''
+  }
+
+  return ranges
+    .map(range => view.state.doc.sliceString(range.from, range.to))
     .join('\n')
 }
 
@@ -604,6 +630,24 @@ const copyTextToClipboard = async (text: string) => {
   }
 }
 
+const copyContextMenuSelectedText = async () => {
+  const text = messageBlockContextMenu.value.selectedText
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前没有选中内容，无法复制')
+    return
+  }
+
+  try {
+    await copyTextToClipboard(text)
+    ElMessage.success('选中内容已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
 const copyContextMenuMessageBlock = async () => {
   const block = messageBlockContextMenu.value.block
   if (!block) {
@@ -621,6 +665,37 @@ const copyContextMenuMessageBlock = async () => {
   try {
     await copyTextToClipboard(text)
     ElMessage.success('消息块已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
+const copyContextMenuFormattedMessageBlock = async () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法复制')
+    return
+  }
+
+  const formattedText = formatSecsSml(text).text
+  if (!formattedText) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块无法格式化')
+    return
+  }
+
+  try {
+    await copyTextToClipboard(formattedText)
+    ElMessage.success('格式化消息块已复制')
   } catch {
     ElMessage.error('复制失败，请手动复制')
   } finally {
@@ -669,7 +744,8 @@ const handleLogContextMenu = (event: MouseEvent, view: EditorView) => {
     visible: true,
     left: position.left,
     top: position.top,
-    block
+    block,
+    selectedText: getSelectedText(view)
   }
 
   return true
@@ -1315,5 +1391,16 @@ const jumpToLine = (lineNumber: number) => {
   background: #eef6ff;
   color: #0369a1;
   outline: none;
+}
+
+.log-block-context-menu__item:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.log-block-context-menu__item:disabled:hover,
+.log-block-context-menu__item:disabled:focus-visible {
+  background: transparent;
+  color: #94a3b8;
 }
 </style>

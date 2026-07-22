@@ -117,7 +117,9 @@ export function buildFormattedResult(parsed: ParsedSecsSmlTree) {
       jumpToIndex: openLineIndex
     })
 
-    if (node.children.length > 0) {
+    const shouldRenderCloseLine = node.children.length > 0 || !node.text.endsWith('>')
+
+    if (shouldRenderCloseLine) {
       node.children.forEach((child, index) => walk(child, depth + 1, path.concat(index)))
       lines.push({
         text: `${'    '.repeat(depth)}>` + (depth === 0 && parsed.hasTerminalDot ? '.' : ''),
