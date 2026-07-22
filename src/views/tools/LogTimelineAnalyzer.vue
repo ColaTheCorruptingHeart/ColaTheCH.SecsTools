@@ -68,6 +68,18 @@
       />
     </div>
 
+    <div
+      v-if="messageBlockContextMenu.visible"
+      class="log-block-context-menu"
+      :style="{ left: messageBlockContextMenu.left + 'px', top: messageBlockContextMenu.top + 'px' }"
+      @click.stop
+      @contextmenu.prevent.stop
+    >
+      <button class="log-block-context-menu__item" type="button" @click="copyContextMenuMessageBlock">
+        复制
+      </button>
+    </div>
+
     <CeidImportDialog
       v-model="importDialogVisible"
       :import-text="importText"
@@ -161,6 +173,17 @@ const scrollInfo = ref({ bottomOffset: 0 })
 const exportKeepTimeLine = ref(true)
 const exportSelectedOnly = ref(false)
 const selectedTimelineItemKeys = ref<string[]>([])
+const messageBlockContextMenu = ref<{
+  visible: boolean
+  left: number
+  top: number
+  block: LogMessageBlock | null
+}>({
+  visible: false,
+  left: 0,
+  top: 0,
+  block: null
+})
 
 const viewRef = shallowRef<EditorView>()
 let hoveredMessageBlockKey = ''
@@ -526,8 +549,88 @@ const clearHoveredMessageBlock = () => {
   updateHoveredMessageBlock(null)
 }
 
+const closeMessageBlockContextMenu = () => {
+  if (!messageBlockContextMenu.value.visible) {
+    return
+  }
+
+  messageBlockContextMenu.value = {
+    visible: false,
+    left: 0,
+    top: 0,
+    block: null
+  }
+}
+
+const getContextMenuPosition = (event: MouseEvent) => {
+  const menuWidth = 128
+  const menuHeight = 40
+  const margin = 8
+
+  return {
+    left: Math.max(margin, Math.min(event.clientX, window.innerWidth - menuWidth - margin)),
+    top: Math.max(margin, Math.min(event.clientY, window.innerHeight - menuHeight - margin))
+  }
+}
+
+const getMessageBlockText = (block: LogMessageBlock) => {
+  if (!logContent.value) {
+    return ''
+  }
+
+  return splitLogLines(logContent.value)
+    .slice(block.startLine - 1, block.endLine)
+    .join('\n')
+}
+
+const copyTextToClipboard = async (text: string) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.style.position = 'fixed'
+  textArea.style.left = '-9999px'
+  document.body.appendChild(textArea)
+  textArea.focus()
+  textArea.select()
+
+  try {
+    document.execCommand('copy')
+  } finally {
+    document.body.removeChild(textArea)
+  }
+}
+
+const copyContextMenuMessageBlock = async () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法复制')
+    return
+  }
+
+  try {
+    await copyTextToClipboard(text)
+    ElMessage.success('消息块已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
 const rebuildLogMessageBlocks = (content: string | null) => {
   logMessageBlocks.value = content ? buildLogMessageBlocks(splitLogLines(content)) : []
+  closeMessageBlockContextMenu()
   clearHoveredMessageBlock()
 }
 
@@ -546,6 +649,44 @@ const handleLogMouseMove = (event: MouseEvent, view: EditorView) => {
 
   updateHoveredMessageBlock(findHoveredMessageBlock(lineNumber))
   return false
+}
+
+const handleLogContextMenu = (event: MouseEvent, view: EditorView) => {
+  const lineNumber = getLineNumberFromMouseEvent(event, view)
+  const block = lineNumber > 0 ? findHoveredMessageBlock(lineNumber) : null
+
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return false
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+  updateHoveredMessageBlock(block)
+
+  const position = getContextMenuPosition(event)
+  messageBlockContextMenu.value = {
+    visible: true,
+    left: position.left,
+    top: position.top,
+    block
+  }
+
+  return true
+}
+
+const handleDocumentClick = () => {
+  closeMessageBlockContextMenu()
+}
+
+const handleWindowResize = () => {
+  closeMessageBlockContextMenu()
+}
+
+const handleWindowKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    closeMessageBlockContextMenu()
+  }
 }
 
 watch(logContent, rebuildLogMessageBlocks)
@@ -872,8 +1013,13 @@ const extensions = [
     mousemove(event, view) {
       return handleLogMouseMove(event, view)
     },
+    contextmenu(event, view) {
+      return handleLogContextMenu(event, view)
+    },
     mouseleave() {
-      clearHoveredMessageBlock()
+      if (!messageBlockContextMenu.value.visible) {
+        clearHoveredMessageBlock()
+      }
       return false
     }
   })
@@ -889,7 +1035,8 @@ const handleReady = (payload: { view: EditorView }) => {
 }
 
 const handleScroll = () => {
-    // Scroll events handled internally or left for expansion
+  closeMessageBlockContextMenu()
+  clearHoveredMessageBlock()
 }
 
 const triggerUpload = () => {
@@ -928,9 +1075,15 @@ const restorePagePadding = () => {
 
 onMounted(() => {
   applyPagePadding()
+  document.addEventListener('click', handleDocumentClick)
+  window.addEventListener('resize', handleWindowResize)
+  window.addEventListener('keydown', handleWindowKeydown)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener('resize', handleWindowResize)
+  window.removeEventListener('keydown', handleWindowKeydown)
   restorePagePadding()
 })
 
@@ -1130,5 +1283,37 @@ const jumpToLine = (lineNumber: number) => {
 }
 :deep(.cm-scroller::-webkit-scrollbar-corner) {
   background-color: transparent;
+}
+
+.log-block-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 128px;
+  padding: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.log-block-context-menu__item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.log-block-context-menu__item:hover,
+.log-block-context-menu__item:focus-visible {
+  background: #eef6ff;
+  color: #0369a1;
+  outline: none;
 }
 </style>
