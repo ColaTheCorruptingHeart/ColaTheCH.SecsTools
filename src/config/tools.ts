@@ -125,6 +125,15 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Calendar',
         color: '#3b82f6', // blue-500
         componentPath: 'LogTimelineAnalyzer'
+      },
+      {
+        id: 'log-diff-analyzer',
+        name: '日志差异分析',
+        desc: '粘贴两份日志内容，进行基础行级差异对比，适合快速定位日志变化。',
+        path: '/tools/log-diff-analyzer',
+        icon: 'Files',
+        color: '#0ea5e9', // sky-500
+        componentPath: 'LogDiffAnalyzer'
       }
     ]
   },

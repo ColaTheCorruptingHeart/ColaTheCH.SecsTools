@@ -46,6 +46,15 @@
       >
         <template #header-actions>
           <div class="flex items-center gap-2">
+            <el-button
+              :type="canSendRecordedLogsToDiff ? 'primary' : 'default'"
+              :plain="!canSendRecordedLogsToDiff"
+              :disabled="!canSendRecordedLogsToDiff"
+              @click="sendRecordedLogsToDiffAnalyzer"
+              size="small"
+            >
+              差异对比
+            </el-button>
             <el-button type="danger" plain @click="clearAllData" size="small">清空数据</el-button>
             <el-button type="primary" @click="triggerUpload" size="small">加载日志文件</el-button>
             <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" multiple @change="onFileSelected" />
@@ -103,6 +112,12 @@
       <button class="log-block-context-menu__item" type="button" @click="sendContextMenuMessageBlockToSecsSmlFormatter">
         发送至SML格式化
       </button>
+      <button class="log-block-context-menu__item" type="button" @click="recordContextMenuMessageBlockToDiff('left')">
+        记录至Diff-L
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="recordContextMenuMessageBlockToDiff('right')">
+        记录至Diff-R
+      </button>
     </div>
 
     <div v-if="isDraggingLogFiles" class="log-drop-overlay">
@@ -140,6 +155,7 @@ import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileNa
 import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
 import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import { formatSecsSml } from './secsSml'
+import { discardLogDiffTransferPayload, storeLogDiffTransferPayload } from './logDiffTransfer'
 import { discardSecsSmlTransferText, storeSecsSmlTransferText } from './secsSmlTransfer'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
@@ -205,6 +221,8 @@ const timelineData = ref<TimelineItem[]>([])
 const logMessageBlocks = ref<LogMessageBlock[]>([])
 const editorTotalLines = ref(1)
 const scrollInfo = ref({ bottomOffset: 0 })
+const recordedDiffLeftText = ref('')
+const recordedDiffRightText = ref('')
 const isDraggingLogFiles = ref(false)
 const exportKeepTimeLine = ref(true)
 const exportSelectedOnly = ref(false)
@@ -434,6 +452,10 @@ const sampleTimelineItems = (items: TimelineItem[], limit: number) => {
 
 const renderedMarkerItems = computed(() => {
   return sampleTimelineItems(filteredTimelineData.value, LOG_TIMELINE_LIMITS.scrollMarkerSampleMaxCount)
+})
+
+const canSendRecordedLogsToDiff = computed(() => {
+  return Boolean(recordedDiffLeftText.value && recordedDiffRightText.value)
 })
 
 const markerSamplingEnabled = computed(() => {
@@ -679,7 +701,7 @@ const closeMessageBlockContextMenu = () => {
 
 const getContextMenuPosition = (event: MouseEvent) => {
   const menuWidth = 148
-  const menuHeight = 136
+  const menuHeight = 220
   const margin = 8
 
   return {
@@ -836,6 +858,65 @@ const sendContextMenuMessageBlockToSecsSmlFormatter = () => {
     ElMessage.error('发送失败，请稍后重试')
   } finally {
     closeMessageBlockContextMenu()
+  }
+}
+
+const recordContextMenuMessageBlockToDiff = (side: 'left' | 'right') => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法记录')
+    return
+  }
+
+  if (side === 'left') {
+    recordedDiffLeftText.value = text
+    ElMessage.success('已记录至 Diff-L')
+  } else {
+    recordedDiffRightText.value = text
+    ElMessage.success('已记录至 Diff-R')
+  }
+
+  closeMessageBlockContextMenu()
+}
+
+const clearRecordedDiffLogs = () => {
+  recordedDiffLeftText.value = ''
+  recordedDiffRightText.value = ''
+}
+
+const sendRecordedLogsToDiffAnalyzer = () => {
+  if (!canSendRecordedLogsToDiff.value) {
+    ElMessage.warning('请先分别记录 Diff-L 与 Diff-R')
+    return
+  }
+
+  try {
+    const transferId = storeLogDiffTransferPayload({
+      left: recordedDiffLeftText.value,
+      right: recordedDiffRightText.value
+    })
+    const route = router.resolve({
+      path: '/tools/log-diff-analyzer',
+      query: { source: transferId }
+    })
+    const openedWindow = window.open(route.href, '_blank')
+
+    if (!openedWindow) {
+      discardLogDiffTransferPayload(transferId)
+      ElMessage.error('打开日志差异分析页面失败，请检查浏览器弹窗设置')
+      return
+    }
+
+    ElMessage.success('已发送至日志差异分析')
+  } catch {
+    ElMessage.error('发送失败，请稍后重试')
   }
 }
 
@@ -1270,6 +1351,7 @@ const resetLogImportState = () => {
   timelineData.value = []
   selectedTimelineItemKeys.value = []
   lastSelectedTimelineItemKey.value = null
+  clearRecordedDiffLogs()
 
   if (viewRef.value) {
     viewRef.value.dispatch({
@@ -1482,6 +1564,7 @@ const clearAllData = () => {
     exportSelectedOnly.value = false
     filterSxFy.value = ''
     filterDesc.value = []
+    clearRecordedDiffLogs()
     if (fileInput.value) fileInput.value.value = ''
     if (viewRef.value) {
       viewRef.value.dispatch({
