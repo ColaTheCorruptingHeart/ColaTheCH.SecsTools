@@ -15,7 +15,12 @@
       </div>
     </div>
 
-    <div ref="timelineViewportRef" class="flex-1 overflow-auto p-4 custom-scrollbar" @scroll="handleViewportScroll">
+    <div
+      ref="timelineViewportRef"
+      class="flex-1 overflow-auto p-4 custom-scrollbar"
+      @scroll="handleViewportScroll"
+      @contextmenu.prevent="openTimelineContextMenu(null, $event)"
+    >
       <div v-if="items.length" :style="{ height: totalListHeight + 'px', position: 'relative' }">
         <div
           v-for="virtualItem in visibleItems"
@@ -27,6 +32,7 @@
             class="h-17 cursor-pointer border-l-[3px] p-2 rounded-r transition-colors group flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-slate-700/50"
             :style="{ borderLeftColor: getMarkerColor(virtualItem.item.ceid, virtualItem.item.type, virtualItem.item.ruleId) }"
             @click="emit('jump', virtualItem.item.line)"
+            @contextmenu.prevent.stop="openTimelineContextMenu(virtualItem.item, $event)"
           >
             <div class="flex justify-between items-center gap-2">
               <span class="text-[11px] text-slate-600 font-mono tracking-tight shrink-0">{{ virtualItem.item.time }}</span>
@@ -41,8 +47,8 @@
                 >{{ virtualItem.item.type === 'CEID' ? 'CEID' : 'SxFy' }}: {{ virtualItem.item.ceid }}</span>
                 <el-checkbox
                   :model-value="selectedItemKeySet.has(getItemKey(virtualItem.item))"
-                  @click.stop
-                  @change="emit('toggleItemChecked', { key: getItemKey(virtualItem.item), checked: Boolean($event) })"
+                  @click.stop="handleItemCheckboxClick(virtualItem.item, $event)"
+                  @change="handleItemCheckedChange(virtualItem.item, Boolean($event))"
                 />
               </div>
             </div>
@@ -71,6 +77,27 @@
         </el-button>
       </div>
     </div>
+
+    <div
+      v-if="timelineContextMenu.visible"
+      class="timeline-context-menu"
+      :style="{ left: timelineContextMenu.left + 'px', top: timelineContextMenu.top + 'px' }"
+      @click.stop
+      @contextmenu.prevent.stop
+    >
+      <button class="timeline-context-menu__item" type="button" :disabled="!items.length" @click="handleContextMenuAction('selectAll')">
+        全选
+      </button>
+      <button class="timeline-context-menu__item" type="button" :disabled="!items.length" @click="handleContextMenuAction('clearAll')">
+        取消全选
+      </button>
+      <button class="timeline-context-menu__item" type="button" :disabled="!timelineContextMenu.item?.sxFy" @click="handleContextMenuAction('selectSameSxFy')">
+        选择同SxFy
+      </button>
+      <button class="timeline-context-menu__item" type="button" :disabled="!timelineContextMenu.item?.ceid" @click="handleContextMenuAction('selectSameCeid')">
+        选择同CEID
+      </button>
+    </div>
   </div>
 </template>
 
@@ -98,7 +125,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   jump: [lineNumber: number]
-  toggleItemChecked: [payload: { key: string, checked: boolean }]
+  toggleItemChecked: [payload: { key: string, checked: boolean, shiftKey: boolean }]
+  timelineContextAction: [payload: { action: 'selectAll' | 'clearAll' | 'selectSameSxFy' | 'selectSameCeid', key?: string }]
+  timelineContextMenuOpened: []
   exportLogs: []
   exportCommandSet: []
   'update:filterSxFy': [value: string]
@@ -114,6 +143,17 @@ const selectedItemKeySet = computed(() => {
 const timelineViewportRef = ref<HTMLDivElement | null>(null)
 const viewportHeight = ref(0)
 const scrollTop = ref(0)
+const timelineContextMenu = ref<{
+  visible: boolean
+  left: number
+  top: number
+  item: TimelineItem | null
+}>({
+  visible: false,
+  left: 0,
+  top: 0,
+  item: null
+})
 
 let resizeObserver: ResizeObserver | null = null
 
@@ -144,6 +184,68 @@ const totalListHeight = computed(() => {
   return props.items.length * ITEM_HEIGHT
 })
 
+const lastCheckboxClick = ref<{ key: string, shiftKey: boolean } | null>(null)
+
+const handleItemCheckboxClick = (item: TimelineItem, event: MouseEvent) => {
+  lastCheckboxClick.value = {
+    key: props.getItemKey(item),
+    shiftKey: event.shiftKey
+  }
+}
+
+const handleItemCheckedChange = (item: TimelineItem, checked: boolean) => {
+  const key = props.getItemKey(item)
+  const shiftKey = lastCheckboxClick.value?.key === key ? lastCheckboxClick.value.shiftKey : false
+
+  lastCheckboxClick.value = null
+  emit('toggleItemChecked', { key, checked, shiftKey })
+}
+
+const getContextMenuPosition = (event: MouseEvent) => {
+  const menuWidth = 136
+  const menuHeight = 148
+  const margin = 8
+
+  return {
+    left: Math.max(margin, Math.min(event.clientX, window.innerWidth - menuWidth - margin)),
+    top: Math.max(margin, Math.min(event.clientY, window.innerHeight - menuHeight - margin))
+  }
+}
+
+const openTimelineContextMenu = (item: TimelineItem | null, event: MouseEvent) => {
+  const position = getContextMenuPosition(event)
+
+  emit('timelineContextMenuOpened')
+  timelineContextMenu.value = {
+    visible: true,
+    left: position.left,
+    top: position.top,
+    item
+  }
+}
+
+const closeTimelineContextMenu = () => {
+  if (!timelineContextMenu.value.visible) {
+    return
+  }
+
+  timelineContextMenu.value = {
+    visible: false,
+    left: 0,
+    top: 0,
+    item: null
+  }
+}
+
+const handleContextMenuAction = (action: 'selectAll' | 'clearAll' | 'selectSameSxFy' | 'selectSameCeid') => {
+  const item = timelineContextMenu.value.item
+  emit('timelineContextAction', {
+    action,
+    key: item ? props.getItemKey(item) : undefined
+  })
+  closeTimelineContextMenu()
+}
+
 const syncViewportMetrics = () => {
   if (!timelineViewportRef.value) {
     return
@@ -159,10 +261,23 @@ const handleViewportScroll = () => {
   }
 
   scrollTop.value = timelineViewportRef.value.scrollTop
+  closeTimelineContextMenu()
+}
+
+const handleDocumentClick = () => {
+  closeTimelineContextMenu()
+}
+
+const handleWindowKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    closeTimelineContextMenu()
+  }
 }
 
 onMounted(() => {
   syncViewportMetrics()
+  document.addEventListener('click', handleDocumentClick)
+  window.addEventListener('keydown', handleWindowKeydown)
 
   if (!timelineViewportRef.value) {
     return
@@ -175,6 +290,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener('keydown', handleWindowKeydown)
   resizeObserver?.disconnect()
   resizeObserver = null
 })
@@ -214,5 +331,48 @@ const exportSelectedOnlyModel = computed({
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.timeline-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 128px;
+  padding: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.timeline-context-menu__item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-context-menu__item:hover,
+.timeline-context-menu__item:focus-visible {
+  background: #eef6ff;
+  color: #0369a1;
+  outline: none;
+}
+
+.timeline-context-menu__item:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.timeline-context-menu__item:disabled:hover,
+.timeline-context-menu__item:disabled:focus-visible {
+  background: transparent;
+  color: #94a3b8;
 }
 </style>

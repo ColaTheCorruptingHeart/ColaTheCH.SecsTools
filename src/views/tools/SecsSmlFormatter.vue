@@ -64,11 +64,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, ref, shallowRef } from 'vue'
 import { Codemirror } from 'vue-codemirror'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Compartment, EditorState } from '@codemirror/state'
 import { Decoration, EditorView, lineNumbers } from '@codemirror/view'
+import { consumeSecsSmlTransferText } from './secsSmlTransfer'
 
 interface FormattedLineMeta {
   clickable: boolean
@@ -82,6 +84,7 @@ type FormatWorkerMessage =
   | { type: 'error'; message: string }
 
 const sourceTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const route = useRoute()
 const formattedText = ref('')
 const formattedLines = ref<string[]>([])
 const visibleFormattedText = ref('')
@@ -165,6 +168,12 @@ const hasCollapsedLines = computed(() => collapsedPaths.value.size > 0)
 
 function getSourceText() {
   return sourceTextareaRef.value?.value ?? ''
+}
+
+function removeTransferQueryFromUrl() {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('source')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
 }
 
 function rebuildPathLineMaps(lineMeta: FormattedLineMeta[]) {
@@ -506,6 +515,29 @@ async function onFormat() {
   }
 }
 
+async function loadTransferredSourceText() {
+  const sourceQuery = route.query.source
+  const transferId = Array.isArray(sourceQuery) ? sourceQuery[0] : sourceQuery
+  if (!transferId) {
+    return
+  }
+
+  removeTransferQueryFromUrl()
+  const transferredText = consumeSecsSmlTransferText(transferId)
+  if (!transferredText) {
+    ElMessage.warning('未找到待格式化的消息块内容')
+    return
+  }
+
+  await nextTick()
+
+  if (sourceTextareaRef.value) {
+    sourceTextareaRef.value.value = transferredText
+  }
+
+  await onFormat()
+}
+
 function onClear() {
   if (loading.value) return
 
@@ -600,6 +632,10 @@ async function onCopy() {
     ElMessage.error('复制失败，请手动复制')
   }
 }
+
+onMounted(() => {
+  void loadTransferredSourceText()
+})
 </script>
 
 <style scoped>

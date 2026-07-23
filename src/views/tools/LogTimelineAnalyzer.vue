@@ -1,5 +1,14 @@
 <template>
-  <div ref="pageRoot" class="h-full flex flex-col gap-4" v-loading="loading" element-loading-text="正在解析日志文件，请稍候...">
+  <div
+    ref="pageRoot"
+    class="relative h-full flex flex-col gap-4"
+    v-loading="loading"
+    element-loading-text="正在解析日志文件，请稍候..."
+    @dragenter="handlePageDragEnter"
+    @dragover="handlePageDragOver"
+    @dragleave="handlePageDragLeave"
+    @drop="handlePageDrop"
+  >
     <!-- Main Content -->
     <div class="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">
         <!-- Left: Rules -->
@@ -37,6 +46,15 @@
       >
         <template #header-actions>
           <div class="flex items-center gap-2">
+            <el-button
+              :type="canSendRecordedLogsToDiff ? 'primary' : 'default'"
+              :plain="!canSendRecordedLogsToDiff"
+              :disabled="!canSendRecordedLogsToDiff"
+              @click="sendRecordedLogsToDiffAnalyzer"
+              size="small"
+            >
+              差异对比
+            </el-button>
             <el-button type="danger" plain @click="clearAllData" size="small">清空数据</el-button>
             <el-button type="primary" @click="triggerUpload" size="small">加载日志文件</el-button>
             <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" multiple @change="onFileSelected" />
@@ -62,10 +80,50 @@
         @update:exportKeepTimeLine="exportKeepTimeLine = $event"
         @update:exportSelectedOnly="exportSelectedOnly = $event"
         @toggleItemChecked="toggleTimelineItemChecked"
+        @timelineContextAction="handleTimelineContextAction"
+        @timelineContextMenuOpened="closeMessageBlockContextMenu"
         @jump="jumpToLine"
         @exportLogs="exportMatchedLogs"
         @exportCommandSet="exportMatchedCommandSet"
       />
+    </div>
+
+    <div
+      v-if="messageBlockContextMenu.visible"
+      class="log-block-context-menu"
+      :style="{ left: messageBlockContextMenu.left + 'px', top: messageBlockContextMenu.top + 'px' }"
+      @click.stop
+      @contextmenu.prevent.stop
+    >
+      <button
+        class="log-block-context-menu__item"
+        type="button"
+        :disabled="!messageBlockContextMenu.selectedText"
+        @click="copyContextMenuSelectedText"
+      >
+        复制选中内容
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="copyContextMenuMessageBlock">
+        复制消息块
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="copyContextMenuFormattedMessageBlock">
+        复制格式化消息块
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="sendContextMenuMessageBlockToSecsSmlFormatter">
+        发送至SML格式化
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="recordContextMenuMessageBlockToDiff('left')">
+        记录至Diff-L
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="recordContextMenuMessageBlockToDiff('right')">
+        记录至Diff-R
+      </button>
+    </div>
+
+    <div v-if="isDraggingLogFiles" class="log-drop-overlay">
+      <div class="log-drop-overlay__panel">
+        松开以导入日志文件
+      </div>
     </div>
 
     <CeidImportDialog
@@ -87,13 +145,18 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
 import { LOG_TIMELINE_LIMITS } from './log-timeline/config'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
-import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
+import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import { formatSecsSml } from './secsSml'
+import { discardLogDiffTransferPayload, storeLogDiffTransferPayload } from './logDiffTransfer'
+import { discardSecsSmlTransferText, storeSecsSmlTransferText } from './secsSmlTransfer'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
@@ -101,6 +164,7 @@ import SxFyRuleDialog from './log-timeline/components/SxFyRuleDialog.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
 
 const loading = ref(false)
+const router = useRouter()
 const pageRoot = ref<HTMLDivElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 const jsonFileInput = ref<HTMLInputElement | null>(null)
@@ -154,13 +218,33 @@ const predefineColors = ref([
 
 const logContent = ref<string | null>(null)
 const timelineData = ref<TimelineItem[]>([])
+const logMessageBlocks = ref<LogMessageBlock[]>([])
 const editorTotalLines = ref(1)
 const scrollInfo = ref({ bottomOffset: 0 })
+const recordedDiffLeftText = ref('')
+const recordedDiffRightText = ref('')
+const isDraggingLogFiles = ref(false)
 const exportKeepTimeLine = ref(true)
 const exportSelectedOnly = ref(false)
 const selectedTimelineItemKeys = ref<string[]>([])
+const lastSelectedTimelineItemKey = ref<string | null>(null)
+const messageBlockContextMenu = ref<{
+  visible: boolean
+  left: number
+  top: number
+  block: LogMessageBlock | null
+  selectedText: string
+}>({
+  visible: false,
+  left: 0,
+  top: 0,
+  block: null,
+  selectedText: ''
+})
 
 const viewRef = shallowRef<EditorView>()
+let hoveredMessageBlockKey = ''
+let logFileDragDepth = 0
 
 const countLines = (text: string) => {
   if (!text) return 0
@@ -370,6 +454,10 @@ const renderedMarkerItems = computed(() => {
   return sampleTimelineItems(filteredTimelineData.value, LOG_TIMELINE_LIMITS.scrollMarkerSampleMaxCount)
 })
 
+const canSendRecordedLogsToDiff = computed(() => {
+  return Boolean(recordedDiffLeftText.value && recordedDiffRightText.value)
+})
+
 const markerSamplingEnabled = computed(() => {
   return renderedMarkerItems.value.length < filteredTimelineData.value.length
 })
@@ -431,8 +519,31 @@ const canExportTimelineItems = computed(() => {
   return Boolean(logContent.value && exportTimelineItems.value.length)
 })
 
-const toggleTimelineItemChecked = ({ key, checked }: { key: string, checked: boolean }) => {
+const toggleTimelineItemChecked = ({ key, checked, shiftKey }: { key: string, checked: boolean, shiftKey: boolean }) => {
   const nextKeys = new Set(selectedTimelineItemKeys.value)
+
+  if (shiftKey && lastSelectedTimelineItemKey.value && lastSelectedTimelineItemKey.value !== key) {
+    const orderedKeys = filteredTimelineData.value.map(getTimelineItemKey)
+    const anchorIndex = orderedKeys.indexOf(lastSelectedTimelineItemKey.value)
+    const targetIndex = orderedKeys.indexOf(key)
+
+    if (anchorIndex >= 0 && targetIndex >= 0) {
+      const startIndex = Math.min(anchorIndex, targetIndex)
+      const endIndex = Math.max(anchorIndex, targetIndex)
+
+      orderedKeys.slice(startIndex, endIndex + 1).forEach(itemKey => {
+        if (checked) {
+          nextKeys.add(itemKey)
+        } else {
+          nextKeys.delete(itemKey)
+        }
+      })
+
+      selectedTimelineItemKeys.value = Array.from(nextKeys)
+      lastSelectedTimelineItemKey.value = key
+      return
+    }
+  }
 
   if (checked) {
     nextKeys.add(key)
@@ -441,7 +552,437 @@ const toggleTimelineItemChecked = ({ key, checked }: { key: string, checked: boo
   }
 
   selectedTimelineItemKeys.value = Array.from(nextKeys)
+  lastSelectedTimelineItemKey.value = key
 }
+
+const handleTimelineContextAction = ({ action, key }: { action: 'selectAll' | 'clearAll' | 'selectSameSxFy' | 'selectSameCeid', key?: string }) => {
+  const currentItems = filteredTimelineData.value
+  const nextKeys = new Set(selectedTimelineItemKeys.value)
+
+  if (action === 'selectAll') {
+    currentItems.forEach(item => {
+      nextKeys.add(getTimelineItemKey(item))
+    })
+    const lastItem = currentItems[currentItems.length - 1]
+    selectedTimelineItemKeys.value = Array.from(nextKeys)
+    lastSelectedTimelineItemKey.value = key ?? (lastItem ? getTimelineItemKey(lastItem) : null)
+    return
+  }
+
+  if (action === 'clearAll') {
+    currentItems.forEach(item => {
+      nextKeys.delete(getTimelineItemKey(item))
+    })
+    selectedTimelineItemKeys.value = Array.from(nextKeys)
+    lastSelectedTimelineItemKey.value = null
+    return
+  }
+
+  if (!key) {
+    return
+  }
+
+  const contextItem = currentItems.find(item => getTimelineItemKey(item) === key)
+  if (!contextItem) {
+    return
+  }
+
+  if (action === 'selectSameSxFy') {
+    currentItems.forEach(item => {
+      if (item.sxFy === contextItem.sxFy) {
+        nextKeys.add(getTimelineItemKey(item))
+      }
+    })
+  } else if (action === 'selectSameCeid') {
+    currentItems.forEach(item => {
+      if (item.ceid === contextItem.ceid) {
+        nextKeys.add(getTimelineItemKey(item))
+      }
+    })
+  }
+
+  selectedTimelineItemKeys.value = Array.from(nextKeys)
+  lastSelectedTimelineItemKey.value = key
+}
+
+const getMessageBlockKey = (block: LogMessageBlock | null) => {
+  if (!block) {
+    return ''
+  }
+
+  return `${block.startLine}:${block.contentStartLine}:${block.endLine}`
+}
+
+const findHoveredMessageBlock = (lineNumber: number) => {
+  let left = 0
+  let right = logMessageBlocks.value.length - 1
+
+  while (left <= right) {
+    const middle = Math.floor((left + right) / 2)
+    const block = logMessageBlocks.value[middle]
+
+    if (!block) {
+      break
+    }
+
+    if (lineNumber < block.startLine) {
+      right = middle - 1
+    } else if (lineNumber > block.endLine) {
+      left = middle + 1
+    } else {
+      return block
+    }
+  }
+
+  return null
+}
+
+const getLineNumberFromMouseEvent = (event: MouseEvent, view: EditorView) => {
+  const position = view.posAtCoords({ x: event.clientX, y: event.clientY })
+  if (position == null) {
+    return -1
+  }
+
+  return view.state.doc.lineAt(position).number
+}
+
+const getHoverBlockExtension = (block: LogMessageBlock | null, doc: Text) => {
+  if (!block) {
+    return Decoration.none
+  }
+
+  const builder: Array<Range<Decoration>> = []
+  const startLine = Math.max(1, block.startLine)
+  const endLine = Math.min(doc.lines, block.endLine)
+  const blockHighlight = Decoration.line({ attributes: { class: 'cm-log-hover-block' } })
+
+  for (let lineNumber = startLine; lineNumber <= endLine; lineNumber += 1) {
+    const lineData = doc.line(lineNumber)
+    builder.push(blockHighlight.range(lineData.from, lineData.from))
+  }
+
+  return Decoration.set(builder, true)
+}
+
+const updateHoveredMessageBlock = (block: LogMessageBlock | null) => {
+  const nextKey = getMessageBlockKey(block)
+  if (nextKey === hoveredMessageBlockKey) {
+    return
+  }
+
+  hoveredMessageBlockKey = nextKey
+
+  if (!viewRef.value) {
+    return
+  }
+
+  viewRef.value.dispatch({
+    effects: hoverBlockCompartment.reconfigure(EditorView.decorations.of(getHoverBlockExtension(block, viewRef.value.state.doc)))
+  })
+}
+
+const clearHoveredMessageBlock = () => {
+  updateHoveredMessageBlock(null)
+}
+
+const closeMessageBlockContextMenu = () => {
+  if (!messageBlockContextMenu.value.visible) {
+    return
+  }
+
+  messageBlockContextMenu.value = {
+    visible: false,
+    left: 0,
+    top: 0,
+    block: null,
+    selectedText: ''
+  }
+}
+
+const getContextMenuPosition = (event: MouseEvent) => {
+  const menuWidth = 148
+  const menuHeight = 220
+  const margin = 8
+
+  return {
+    left: Math.max(margin, Math.min(event.clientX, window.innerWidth - menuWidth - margin)),
+    top: Math.max(margin, Math.min(event.clientY, window.innerHeight - menuHeight - margin))
+  }
+}
+
+const getMessageBlockText = (block: LogMessageBlock) => {
+  if (!logContent.value) {
+    return ''
+  }
+
+  return splitLogLines(logContent.value)
+    .slice(block.startLine - 1, block.endLine)
+    .join('\n')
+}
+
+const getSelectedText = (view: EditorView) => {
+  const ranges = view.state.selection.ranges.filter(range => !range.empty)
+  if (!ranges.length) {
+    return ''
+  }
+
+  return ranges
+    .map(range => view.state.doc.sliceString(range.from, range.to))
+    .join('\n')
+}
+
+const copyTextToClipboard = async (text: string) => {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textArea = document.createElement('textarea')
+  textArea.value = text
+  textArea.style.position = 'fixed'
+  textArea.style.left = '-9999px'
+  document.body.appendChild(textArea)
+  textArea.focus()
+  textArea.select()
+
+  try {
+    document.execCommand('copy')
+  } finally {
+    document.body.removeChild(textArea)
+  }
+}
+
+const copyContextMenuSelectedText = async () => {
+  const text = messageBlockContextMenu.value.selectedText
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前没有选中内容，无法复制')
+    return
+  }
+
+  try {
+    await copyTextToClipboard(text)
+    ElMessage.success('选中内容已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
+const copyContextMenuMessageBlock = async () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法复制')
+    return
+  }
+
+  try {
+    await copyTextToClipboard(text)
+    ElMessage.success('消息块已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
+const copyContextMenuFormattedMessageBlock = async () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法复制')
+    return
+  }
+
+  const formattedText = formatSecsSml(text).text
+  if (!formattedText) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块无法格式化')
+    return
+  }
+
+  try {
+    await copyTextToClipboard(formattedText)
+    ElMessage.success('格式化消息块已复制')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
+const sendContextMenuMessageBlockToSecsSmlFormatter = () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法发送')
+    return
+  }
+
+  try {
+    const transferId = storeSecsSmlTransferText(text)
+    const route = router.resolve({
+      path: '/tools/secs-sml',
+      query: { source: transferId }
+    })
+    const openedWindow = window.open(route.href, '_blank')
+
+    if (!openedWindow) {
+      discardSecsSmlTransferText(transferId)
+      ElMessage.error('打开 SECS SML 格式化页面失败，请检查浏览器弹窗设置')
+      return
+    }
+
+    ElMessage.success('已发送至 SECS SML 格式化')
+  } catch {
+    ElMessage.error('发送失败，请稍后重试')
+  } finally {
+    closeMessageBlockContextMenu()
+  }
+}
+
+const recordContextMenuMessageBlockToDiff = (side: 'left' | 'right') => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  const text = getMessageBlockText(block)
+  if (!text) {
+    closeMessageBlockContextMenu()
+    ElMessage.warning('当前消息块为空，无法记录')
+    return
+  }
+
+  if (side === 'left') {
+    recordedDiffLeftText.value = text
+    ElMessage.success('已记录至 Diff-L')
+  } else {
+    recordedDiffRightText.value = text
+    ElMessage.success('已记录至 Diff-R')
+  }
+
+  closeMessageBlockContextMenu()
+}
+
+const clearRecordedDiffLogs = () => {
+  recordedDiffLeftText.value = ''
+  recordedDiffRightText.value = ''
+}
+
+const sendRecordedLogsToDiffAnalyzer = () => {
+  if (!canSendRecordedLogsToDiff.value) {
+    ElMessage.warning('请先分别记录 Diff-L 与 Diff-R')
+    return
+  }
+
+  try {
+    const transferId = storeLogDiffTransferPayload({
+      left: recordedDiffLeftText.value,
+      right: recordedDiffRightText.value
+    })
+    const route = router.resolve({
+      path: '/tools/log-diff-analyzer',
+      query: { source: transferId }
+    })
+    const openedWindow = window.open(route.href, '_blank')
+
+    if (!openedWindow) {
+      discardLogDiffTransferPayload(transferId)
+      ElMessage.error('打开日志差异分析页面失败，请检查浏览器弹窗设置')
+      return
+    }
+
+    ElMessage.success('已发送至日志差异分析')
+  } catch {
+    ElMessage.error('发送失败，请稍后重试')
+  }
+}
+
+const rebuildLogMessageBlocks = (content: string | null) => {
+  logMessageBlocks.value = content ? buildLogMessageBlocks(splitLogLines(content)) : []
+  closeMessageBlockContextMenu()
+  clearHoveredMessageBlock()
+}
+
+const handleLogMouseMove = (event: MouseEvent, view: EditorView) => {
+  const lineNumber = getLineNumberFromMouseEvent(event, view)
+  if (lineNumber < 1 || lineNumber > view.state.doc.lines) {
+    clearHoveredMessageBlock()
+    return false
+  }
+
+  const line = view.state.doc.line(lineNumber)
+  if (!line.text.trim()) {
+    clearHoveredMessageBlock()
+    return false
+  }
+
+  updateHoveredMessageBlock(findHoveredMessageBlock(lineNumber))
+  return false
+}
+
+const handleLogContextMenu = (event: MouseEvent, view: EditorView) => {
+  const lineNumber = getLineNumberFromMouseEvent(event, view)
+  const block = lineNumber > 0 ? findHoveredMessageBlock(lineNumber) : null
+
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return false
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+  updateHoveredMessageBlock(block)
+
+  const position = getContextMenuPosition(event)
+  messageBlockContextMenu.value = {
+    visible: true,
+    left: position.left,
+    top: position.top,
+    block,
+    selectedText: getSelectedText(view)
+  }
+
+  return true
+}
+
+const handleDocumentClick = () => {
+  closeMessageBlockContextMenu()
+}
+
+const handleWindowResize = () => {
+  closeMessageBlockContextMenu()
+}
+
+const handleWindowKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    closeMessageBlockContextMenu()
+  }
+}
+
+watch(logContent, rebuildLogMessageBlocks)
 
 watch([filterSxFy, filterDesc], ([newSxFy], [oldSxFy]) => {
   if (newSxFy !== oldSxFy) {
@@ -714,10 +1255,15 @@ const syncScrollGeometry = (view: EditorView) => {
 
 // CodeMirror Extensions Setup
 const highlightCompartment = new Compartment()
+const hoverBlockCompartment = new Compartment()
 const baseTheme = EditorView.theme({
   ".cm-scroller": {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important',
     fontSize: '12px'
+  },
+  ".cm-log-hover-block": {
+    backgroundImage: 'linear-gradient(90deg, rgba(14, 165, 233, 0.18), rgba(14, 165, 233, 0.07)) !important',
+    boxShadow: 'inset 3px 0 0 #0ea5e9'
   }
 })
 
@@ -749,10 +1295,25 @@ const extensions = [
   lineNumbers(),
   EditorState.readOnly.of(true),
   highlightCompartment.of(EditorView.decorations.of(Decoration.none)),
+  hoverBlockCompartment.of(EditorView.decorations.of(Decoration.none)),
   EditorView.updateListener.of((update) => {
     if (update.geometryChanged || update.docChanged) {
        editorTotalLines.value = update.view.state.doc.lines
        syncScrollGeometry(update.view)
+    }
+  }),
+  EditorView.domEventHandlers({
+    mousemove(event, view) {
+      return handleLogMouseMove(event, view)
+    },
+    contextmenu(event, view) {
+      return handleLogContextMenu(event, view)
+    },
+    mouseleave() {
+      if (!messageBlockContextMenu.value.visible) {
+        clearHoveredMessageBlock()
+      }
+      return false
     }
   })
 ]
@@ -767,11 +1328,125 @@ const handleReady = (payload: { view: EditorView }) => {
 }
 
 const handleScroll = () => {
-    // Scroll events handled internally or left for expansion
+  closeMessageBlockContextMenu()
+  clearHoveredMessageBlock()
 }
 
 const triggerUpload = () => {
   fileInput.value?.click()
+}
+
+const hasDraggedFiles = (event: DragEvent) => {
+  return Array.from(event.dataTransfer?.types || []).includes('Files')
+}
+
+const resetDragImportState = () => {
+  logFileDragDepth = 0
+  isDraggingLogFiles.value = false
+}
+
+const resetLogImportState = () => {
+  parseRequestVersion += 1
+  logContent.value = null
+  timelineData.value = []
+  selectedTimelineItemKeys.value = []
+  lastSelectedTimelineItemKey.value = null
+  clearRecordedDiffLogs()
+
+  if (viewRef.value) {
+    viewRef.value.dispatch({
+      effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
+    })
+  }
+}
+
+const importLogFiles = (files: File[]) => {
+  if (files.length === 0) {
+    return
+  }
+
+  if (loading.value) {
+    ElMessage.warning('正在解析日志文件，请稍候')
+    return
+  }
+
+  loading.value = true
+  resetLogImportState()
+
+  // Allow the loading UI to render before reading and parsing large files.
+  setTimeout(async () => {
+    try {
+      const { mergedText, fileCount } = await readAndMergeLogFiles(files)
+      logContent.value = mergedText
+
+      if (fileCount > 1) {
+        ElMessage.success(`已按文件名顺序加载并拼接 ${fileCount} 个日志文件`)
+      } else {
+        ElMessage.success('日志文件加载完成')
+      }
+
+      // Allow CodeMirror to render the doc first before applying decorations.
+      setTimeout(() => {
+        applyRulesAndParse()
+      }, 100)
+    } catch (err: unknown) {
+      ElMessage.error('读取文件失败: ' + getErrorMessage(err))
+      loading.value = false
+    }
+  }, 50)
+}
+
+const handlePageDragEnter = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+  closeMessageBlockContextMenu()
+  logFileDragDepth += 1
+  isDraggingLogFiles.value = true
+}
+
+const handlePageDragOver = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = loading.value ? 'none' : 'copy'
+  }
+}
+
+const handlePageDragLeave = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+  logFileDragDepth = Math.max(0, logFileDragDepth - 1)
+
+  if (logFileDragDepth === 0) {
+    isDraggingLogFiles.value = false
+  }
+}
+
+const handlePageDrop = (event: DragEvent) => {
+  if (!hasDraggedFiles(event)) {
+    return
+  }
+
+  event.preventDefault()
+  resetDragImportState()
+
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (!files.length) {
+    ElMessage.warning('未检测到可导入的日志文件')
+    return
+  }
+
+  importLogFiles(files)
 }
 
 const applyPagePadding = () => {
@@ -806,54 +1481,26 @@ const restorePagePadding = () => {
 
 onMounted(() => {
   applyPagePadding()
+  document.addEventListener('click', handleDocumentClick)
+  window.addEventListener('resize', handleWindowResize)
+  window.addEventListener('keydown', handleWindowKeydown)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick)
+  window.removeEventListener('resize', handleWindowResize)
+  window.removeEventListener('keydown', handleWindowKeydown)
   restorePagePadding()
 })
 
 const onFileSelected = async (e: Event) => {
   const files = Array.from((e.target as HTMLInputElement).files || [])
-  if (files.length === 0) return
+  importLogFiles(files)
 
-  loading.value = true
-  parseRequestVersion += 1
-
-  // Reset existing
-  logContent.value = null
-  timelineData.value = []
-  selectedTimelineItemKeys.value = []
-  if (viewRef.value) {
-    viewRef.value.dispatch({
-        effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
-    })
+  // Reset input so the same file could be selected again.
+  if (fileInput.value) {
+    fileInput.value.value = ''
   }
-
-  // Use timeout to allow loading UI to render
-  setTimeout(async () => {
-    try {
-      const { mergedText, fileCount } = await readAndMergeLogFiles(files)
-      logContent.value = mergedText
-
-      if (fileCount > 1) {
-        ElMessage.success(`已按文件名顺序加载并拼接 ${fileCount} 个日志文件`)
-      } else {
-        ElMessage.success('日志文件加载完成')
-      }
-
-      // Allow CodeMirror to render the doc first before applying decorations
-      setTimeout(() => {
-          applyRulesAndParse()
-      }, 100)
-    } catch (err: unknown) {
-      ElMessage.error('读取文件失败: ' + getErrorMessage(err))
-      loading.value = false
-    }
-    // reset input so the same file could be selected again
-    if (fileInput.value) {
-        fileInput.value.value = ''
-    }
-  }, 50)
 }
 
 const triggerJsonImport = () => {
@@ -913,9 +1560,11 @@ const clearAllData = () => {
     logContent.value = null
     timelineData.value = []
     selectedTimelineItemKeys.value = []
+    lastSelectedTimelineItemKey.value = null
     exportSelectedOnly.value = false
     filterSxFy.value = ''
     filterDesc.value = []
+    clearRecordedDiffLogs()
     if (fileInput.value) fileInput.value.value = ''
     if (viewRef.value) {
       viewRef.value.dispatch({
@@ -946,6 +1595,7 @@ const applyRulesAndParse = () => {
 
       timelineData.value = response.timeline
       selectedTimelineItemKeys.value = []
+      lastSelectedTimelineItemKey.value = null
       if (viewRef.value) {
         editorTotalLines.value = viewRef.value.state.doc.lines
       }
@@ -1008,5 +1658,72 @@ const jumpToLine = (lineNumber: number) => {
 }
 :deep(.cm-scroller::-webkit-scrollbar-corner) {
   background-color: transparent;
+}
+
+.log-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed #0ea5e9;
+  border-radius: 10px;
+  background: rgba(240, 249, 255, 0.78);
+  pointer-events: none;
+}
+
+.log-drop-overlay__panel {
+  padding: 14px 18px;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0369a1;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+}
+
+.log-block-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 128px;
+  padding: 4px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.log-block-context-menu__item {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #334155;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.log-block-context-menu__item:hover,
+.log-block-context-menu__item:focus-visible {
+  background: #eef6ff;
+  color: #0369a1;
+  outline: none;
+}
+
+.log-block-context-menu__item:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.log-block-context-menu__item:disabled:hover,
+.log-block-context-menu__item:disabled:focus-visible {
+  background: transparent;
+  color: #94a3b8;
 }
 </style>
