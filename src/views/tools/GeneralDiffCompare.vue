@@ -1,6 +1,11 @@
 <template>
   <div ref="pageRoot" class="general-diff-page">
-    <section v-if="hasCompared" class="result-pane" v-loading="isRenderingDiff">
+    <section
+      v-if="hasCompared"
+      class="result-pane"
+      v-loading="isRenderingDiff"
+      element-loading-text="正在生成差异结果..."
+    >
       <header class="result-pane__header">
         <div class="result-pane__title-row">
           <h2>差异结果</h2>
@@ -9,6 +14,9 @@
         <div class="result-pane__actions">
           <el-button size="small" plain @click="openInputDialog">重新输入</el-button>
           <span v-if="isLargeComparison" class="result-pane__badge">大文本模式</span>
+          <span v-if="appliedPreformatLabel" class="result-pane__badge result-pane__badge--format">
+            {{ appliedPreformatLabel }}
+          </span>
           <span class="result-pane__badge result-pane__badge--side">Side by side</span>
         </div>
       </header>
@@ -60,7 +68,11 @@
       :close-on-press-escape="false"
       class="general-diff-dialog"
     >
-      <div class="general-diff-dialog__body">
+      <div
+        class="general-diff-dialog__body"
+        v-loading="isPreparingCompare"
+        element-loading-text="正在预处理文本..."
+      >
         <section class="input-pane">
           <header class="input-pane__header">
             <span>原始文本</span>
@@ -94,8 +106,24 @@
 
       <template #footer>
         <div class="general-diff-dialog__footer">
-          <span>当前仅支持手动输入或粘贴文本内容</span>
-          <el-button type="primary" @click="runCompare">开始对比</el-button>
+          <span class="general-diff-dialog__footer-note">当前仅支持手动输入或粘贴文本内容</span>
+          <div class="preformat-controls">
+            <span>预格式化</span>
+            <el-select
+              v-model="preformatMode"
+              size="small"
+              class="preformat-controls__select"
+              :disabled="isPreparingCompare"
+            >
+              <el-option
+                v-for="option in preformatOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+            <el-button type="primary" :loading="isPreparingCompare" @click="runCompare">开始对比</el-button>
+          </div>
         </div>
       </template>
     </el-dialog>
@@ -112,6 +140,7 @@ import { ElMessage } from 'element-plus'
 import { CodeDiff } from 'v-code-diff'
 import { diffLines, type Change } from 'diff'
 import { consumeLogDiffTransferPayload } from './logDiffTransfer'
+import { formatSecsSml } from './secsSml'
 
 interface TextMetrics {
   chars: number
@@ -127,6 +156,7 @@ interface CodeDiffResult {
 }
 
 type DiffBarKind = 'insert' | 'delete' | 'replace'
+type PreformatMode = 'plain' | 'json' | 'xml' | 'sml'
 
 interface RawDiffBarMark {
   kind: DiffBarKind
@@ -138,6 +168,12 @@ interface DiffBarMark {
   kind: DiffBarKind
   top: number
   height: number
+}
+
+interface PreparedComparisonTexts {
+  left: string
+  right: string
+  label: string
 }
 
 const LARGE_TEXT_CHAR_LIMIT = 300_000
@@ -155,6 +191,7 @@ const rightInput = ref('')
 const comparedLeft = ref('')
 const comparedRight = ref('')
 const hasCompared = ref(false)
+const isPreparingCompare = ref(false)
 const isRenderingDiff = ref(false)
 const compareVersion = ref(0)
 const diffStat = ref<CodeDiffResult['stat'] | null>(null)
@@ -162,17 +199,40 @@ const comparedLeftMetrics = ref<TextMetrics>({ chars: 0, lines: 0 })
 const comparedRightMetrics = ref<TextMetrics>({ chars: 0, lines: 0 })
 const diffBarMarks = ref<DiffBarMark[]>([])
 const diffOverviewBottomOffset = ref(0)
+const preformatMode = ref<PreformatMode>('plain')
+const appliedPreformatLabel = ref('')
 const leftStats = ref('0 行 / 0 字符')
 const rightStats = ref('0 行 / 0 字符')
 
 let leftStatsTimer: number | undefined
 let rightStatsTimer: number | undefined
 let renderTimer: number | undefined
+let autoOpenDialogTimer: number | undefined
 let mainContentElement: HTMLElement | null = null
 let previousMainPadding = ''
 let previousMainPaddingVariable = ''
 
 const languageCompartment = new Compartment()
+
+const preformatOptions: Array<{ label: string; value: PreformatMode }> = [
+  { label: '普通文本', value: 'plain' },
+  { label: 'JSON', value: 'json' },
+  { label: 'XML', value: 'xml' },
+  { label: 'SECS SML', value: 'sml' }
+]
+
+const preformatModeLabels: Record<PreformatMode, string> = {
+  plain: '',
+  json: 'JSON 格式化',
+  xml: 'XML 格式化',
+  sml: 'SECS SML 格式化'
+}
+
+const waitForRenderFrame = () => {
+  return new Promise<void>(resolve => {
+    window.requestAnimationFrame(() => resolve())
+  })
+}
 
 const countLines = (text: string) => {
   if (!text) {
@@ -196,6 +256,91 @@ const measureText = (text: string): TextMetrics => ({
 
 const formatMetrics = (metrics: TextMetrics) => {
   return `${metrics.lines.toLocaleString()} 行 / ${metrics.chars.toLocaleString()} 字符`
+}
+
+const formatJsonText = (text: string) => {
+  return JSON.stringify(JSON.parse(text), null, 2)
+}
+
+const formatXmlText = (text: string) => {
+  const parser = new DOMParser()
+  const document = parser.parseFromString(text.trim(), 'application/xml')
+  const parserError = document.getElementsByTagName('parsererror')[0]
+  if (parserError) {
+    throw new Error(parserError.textContent || 'XML 解析失败')
+  }
+
+  const serialized = new XMLSerializer().serializeToString(document)
+  const lines = serialized
+    .replace(/>\s*</g, '><')
+    .replace(/(>)(<)(\/?)/g, '$1\n$2$3')
+    .split('\n')
+
+  let depth = 0
+  return lines
+    .map(rawLine => {
+      const line = rawLine.trim()
+      if (!line) {
+        return ''
+      }
+
+      const isClosingTag = /^<\//.test(line)
+      if (isClosingTag) {
+        depth = Math.max(depth - 1, 0)
+      }
+
+      const formattedLine = `${'  '.repeat(depth)}${line}`
+      const isDeclarationOrSpecialTag = /^<[\?!]/.test(line)
+      const isSelfClosingTag = /\/>$/.test(line)
+      const isInlineClosedTag = /<\/[^>]+>$/.test(line)
+      const isOpeningTag = /^<[^/][^>]*>$/.test(line)
+
+      if (isOpeningTag && !isDeclarationOrSpecialTag && !isSelfClosingTag && !isInlineClosedTag) {
+        depth += 1
+      }
+
+      return formattedLine
+    })
+    .filter(Boolean)
+    .join('\n')
+}
+
+const formatSmlText = (text: string) => {
+  return formatSecsSml(text).text
+}
+
+const formatTextByMode = (text: string, mode: PreformatMode) => {
+  if (mode === 'json') {
+    return formatJsonText(text)
+  }
+
+  if (mode === 'xml') {
+    return formatXmlText(text)
+  }
+
+  if (mode === 'sml') {
+    return formatSmlText(text)
+  }
+
+  return text
+}
+
+const prepareComparisonTexts = (left: string, right: string): PreparedComparisonTexts => {
+  const mode = preformatMode.value
+  if (mode === 'plain') {
+    return { left, right, label: '' }
+  }
+
+  try {
+    return {
+      left: formatTextByMode(left, mode),
+      right: formatTextByMode(right, mode),
+      label: preformatModeLabels[mode]
+    }
+  } catch {
+    ElMessage.warning(`${preformatModeLabels[mode]}失败，已按普通文本对比`)
+    return { left, right, label: '' }
+  }
 }
 
 const getChangeLineCount = (change: Change) => {
@@ -425,7 +570,11 @@ const openInputDialog = () => {
   inputDialogVisible.value = true
 }
 
-const runCompare = () => {
+const runCompare = async () => {
+  if (isPreparingCompare.value || isRenderingDiff.value) {
+    return
+  }
+
   const nextLeft = leftInput.value
   const nextRight = rightInput.value
 
@@ -434,37 +583,47 @@ const runCompare = () => {
     return
   }
 
-  const leftMetrics = measureText(nextLeft)
-  const rightMetrics = measureText(nextRight)
-  const totalChars = leftMetrics.chars + rightMetrics.chars
-  const totalLines = leftMetrics.lines + rightMetrics.lines
+  isPreparingCompare.value = true
+  await nextTick()
+  await waitForRenderFrame()
 
-  if (totalChars > HARD_TEXT_CHAR_LIMIT || totalLines > HARD_TEXT_LINE_LIMIT) {
-    ElMessage.warning('文本过大，建议拆分后再对比，避免浏览器长时间无响应')
-    return
+  try {
+    const preparedTexts = prepareComparisonTexts(nextLeft, nextRight)
+    const leftMetrics = measureText(preparedTexts.left)
+    const rightMetrics = measureText(preparedTexts.right)
+    const totalChars = leftMetrics.chars + rightMetrics.chars
+    const totalLines = leftMetrics.lines + rightMetrics.lines
+
+    if (totalChars > HARD_TEXT_CHAR_LIMIT || totalLines > HARD_TEXT_LINE_LIMIT) {
+      ElMessage.warning('文本过大，建议拆分后再对比，避免浏览器长时间无响应')
+      return
+    }
+
+    if (renderTimer) {
+      window.clearTimeout(renderTimer)
+    }
+
+    hasCompared.value = true
+    isRenderingDiff.value = true
+    inputDialogVisible.value = false
+    comparedLeft.value = ''
+    comparedRight.value = ''
+    diffStat.value = null
+    diffBarMarks.value = []
+    diffOverviewBottomOffset.value = 0
+    appliedPreformatLabel.value = preparedTexts.label
+    comparedLeftMetrics.value = leftMetrics
+    comparedRightMetrics.value = rightMetrics
+
+    renderTimer = window.setTimeout(() => {
+      comparedLeft.value = preparedTexts.left
+      comparedRight.value = preparedTexts.right
+      diffBarMarks.value = buildDiffBarMarks(preparedTexts.left, preparedTexts.right)
+      compareVersion.value += 1
+    }, 16)
+  } finally {
+    isPreparingCompare.value = false
   }
-
-  if (renderTimer) {
-    window.clearTimeout(renderTimer)
-  }
-
-  hasCompared.value = true
-  isRenderingDiff.value = true
-  inputDialogVisible.value = false
-  comparedLeft.value = ''
-  comparedRight.value = ''
-  diffStat.value = null
-  diffBarMarks.value = []
-  diffOverviewBottomOffset.value = 0
-  comparedLeftMetrics.value = leftMetrics
-  comparedRightMetrics.value = rightMetrics
-
-  renderTimer = window.setTimeout(() => {
-    comparedLeft.value = nextLeft
-    comparedRight.value = nextRight
-    diffBarMarks.value = buildDiffBarMarks(nextLeft, nextRight)
-    compareVersion.value += 1
-  }, 16)
 }
 
 const handleDiffResult = async (result: CodeDiffResult) => {
@@ -484,14 +643,14 @@ const loadTransferredDiffPayload = async () => {
   const sourceQuery = route.query.source
   const transferId = Array.isArray(sourceQuery) ? sourceQuery[0] : sourceQuery
   if (!transferId) {
-    return
+    return false
   }
 
   removeTransferQueryFromUrl()
   const payload = consumeLogDiffTransferPayload(transferId)
   if (!payload) {
     ElMessage.warning('未找到待对比的文本内容')
-    return
+    return false
   }
 
   leftInput.value = payload.left
@@ -500,7 +659,8 @@ const loadTransferredDiffPayload = async () => {
   rightStats.value = formatMetrics(measureText(payload.right))
   inputDialogVisible.value = false
   await nextTick()
-  runCompare()
+  await runCompare()
+  return true
 }
 
 const applyPagePadding = () => {
@@ -536,10 +696,15 @@ const restorePagePadding = () => {
 watch(leftInput, value => scheduleStatsUpdate('left', value))
 watch(rightInput, value => scheduleStatsUpdate('right', value))
 
-onMounted(() => {
+onMounted(async () => {
   applyPagePadding()
   window.addEventListener('resize', syncDiffOverviewGeometry)
-  void loadTransferredDiffPayload()
+  const hasTransferredPayload = await loadTransferredDiffPayload()
+  if (!hasTransferredPayload && !hasCompared.value) {
+    autoOpenDialogTimer = window.setTimeout(() => {
+      inputDialogVisible.value = true
+    }, 250)
+  }
 })
 
 onUnmounted(() => {
@@ -552,6 +717,9 @@ onUnmounted(() => {
   }
   if (renderTimer) {
     window.clearTimeout(renderTimer)
+  }
+  if (autoOpenDialogTimer) {
+    window.clearTimeout(autoOpenDialogTimer)
   }
   restorePagePadding()
 })
@@ -645,6 +813,12 @@ onUnmounted(() => {
   border-color: #bfdbfe;
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.result-pane__badge--format {
+  border-color: #ddd6fe;
+  background: #f5f3ff;
+  color: #6d28d9;
 }
 
 .diff-result-empty {
@@ -757,9 +931,24 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.general-diff-dialog__footer span {
+.general-diff-dialog__footer-note {
   color: #64748b;
   font-size: 12px;
+}
+
+.preformat-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preformat-controls span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.preformat-controls__select {
+  width: 132px;
 }
 
 .diff-result-wrap :deep(.code-diff-view) {
