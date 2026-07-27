@@ -105,11 +105,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Codemirror } from 'vue-codemirror'
+import { useRoute } from 'vue-router'
 import { Compartment, type Extension } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { ElMessage } from 'element-plus'
 import { CodeDiff } from 'v-code-diff'
 import { diffLines, type Change } from 'diff'
+import { consumeLogDiffTransferPayload } from './logDiffTransfer'
 
 interface TextMetrics {
   chars: number
@@ -146,6 +148,7 @@ const MAX_DIFF_BAR_MARKS = 420
 
 const pageRoot = ref<HTMLDivElement | null>(null)
 const diffResultWrap = ref<HTMLDivElement | null>(null)
+const route = useRoute()
 const inputDialogVisible = ref(false)
 const leftInput = ref('')
 const rightInput = ref('')
@@ -471,6 +474,35 @@ const handleDiffResult = async (result: CodeDiffResult) => {
   isRenderingDiff.value = false
 }
 
+const removeTransferQueryFromUrl = () => {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('source')
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
+const loadTransferredDiffPayload = async () => {
+  const sourceQuery = route.query.source
+  const transferId = Array.isArray(sourceQuery) ? sourceQuery[0] : sourceQuery
+  if (!transferId) {
+    return
+  }
+
+  removeTransferQueryFromUrl()
+  const payload = consumeLogDiffTransferPayload(transferId)
+  if (!payload) {
+    ElMessage.warning('未找到待对比的文本内容')
+    return
+  }
+
+  leftInput.value = payload.left
+  rightInput.value = payload.right
+  leftStats.value = formatMetrics(measureText(payload.left))
+  rightStats.value = formatMetrics(measureText(payload.right))
+  inputDialogVisible.value = false
+  await nextTick()
+  runCompare()
+}
+
 const applyPagePadding = () => {
   const nextMainElement = pageRoot.value?.closest('.el-main')
   if (!(nextMainElement instanceof HTMLElement)) {
@@ -507,6 +539,7 @@ watch(rightInput, value => scheduleStatsUpdate('right', value))
 onMounted(() => {
   applyPagePadding()
   window.addEventListener('resize', syncDiffOverviewGeometry)
+  void loadTransferredDiffPayload()
 })
 
 onUnmounted(() => {

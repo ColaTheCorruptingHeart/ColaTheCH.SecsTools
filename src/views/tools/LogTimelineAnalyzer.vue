@@ -50,10 +50,10 @@
               :type="canSendRecordedLogsToDiff ? 'primary' : 'default'"
               :plain="!canSendRecordedLogsToDiff"
               :disabled="!canSendRecordedLogsToDiff"
-              @click="sendRecordedLogsToDiffAnalyzer"
+              @click="sendRecordedLogsToGeneralDiffCompare"
               size="small"
             >
-              差异对比
+              通用差异对比
             </el-button>
             <el-button type="danger" plain @click="clearAllData" size="small">清空数据</el-button>
             <el-button type="primary" @click="triggerUpload" size="small">加载日志文件</el-button>
@@ -891,7 +891,7 @@ const clearRecordedDiffLogs = () => {
   recordedDiffRightText.value = ''
 }
 
-const sendRecordedLogsToDiffAnalyzer = () => {
+const sendRecordedLogsToGeneralDiffCompare = () => {
   if (!canSendRecordedLogsToDiff.value) {
     ElMessage.warning('请先分别记录 Diff-L 与 Diff-R')
     return
@@ -903,18 +903,18 @@ const sendRecordedLogsToDiffAnalyzer = () => {
       right: recordedDiffRightText.value
     })
     const route = router.resolve({
-      path: '/tools/log-diff-analyzer',
+      path: '/tools/general-diff-compare',
       query: { source: transferId }
     })
     const openedWindow = window.open(route.href, '_blank')
 
     if (!openedWindow) {
       discardLogDiffTransferPayload(transferId)
-      ElMessage.error('打开日志差异分析页面失败，请检查浏览器弹窗设置')
+      ElMessage.error('打开通用差异对比页面失败，请检查浏览器弹窗设置')
       return
     }
 
-    ElMessage.success('已发送至日志差异分析')
+    ElMessage.success('已发送至通用差异对比')
   } catch {
     ElMessage.error('发送失败，请稍后重试')
   }
