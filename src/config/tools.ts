@@ -49,6 +49,15 @@ export const toolsConfig: ToolCategory[] = [
         color: '#a855f7', // purple-500
         componentPath: 'AsciiHexConverter'
       },
+      {
+        id: 'general-diff-compare',
+        name: '通用差异对比',
+        desc: '粘贴两份通用文本内容，使用左右并排视图快速对比差异，适合大文本按需渲染。',
+        path: '/tools/general-diff-compare',
+        icon: 'Files',
+        color: '#0ea5e9', // sky-500
+        componentPath: 'GeneralDiffCompare'
+      },
     ]
   },
   {
