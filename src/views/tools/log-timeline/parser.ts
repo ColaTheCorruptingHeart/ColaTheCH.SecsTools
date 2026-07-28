@@ -1,4 +1,4 @@
-import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './types'
+﻿import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './types'
 import type { SecsLogDialect as LogDialect } from '../secs-log/types'
 import {
   extractValueFromDataLine,

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="lg:w-72 xl:w-80 shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden h-72 lg:h-full">
     <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 font-medium text-sm flex flex-col text-slate-600 dark:text-slate-300 shrink-0">
       <div class="p-2 px-4 flex justify-between items-center">

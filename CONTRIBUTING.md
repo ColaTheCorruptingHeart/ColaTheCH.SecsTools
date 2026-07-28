@@ -1,4 +1,4 @@
-# Contributing
+﻿# Contributing
 
 感谢你关注 SECS Tools。
 

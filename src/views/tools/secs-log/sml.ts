@@ -1,4 +1,4 @@
-export interface SecsSmlNode {
+﻿export interface SecsSmlNode {
   text: string
   children: SecsSmlNode[]
 }

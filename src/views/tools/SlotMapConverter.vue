@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="h-full flex flex-col gap-4">
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">

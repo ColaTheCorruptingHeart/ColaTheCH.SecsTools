@@ -1,4 +1,4 @@
-export interface LogMessageBlock {
+﻿export interface LogMessageBlock {
   startLine: number
   contentStartLine: number
   endLine: number

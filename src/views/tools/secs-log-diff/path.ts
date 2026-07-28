@@ -1,4 +1,4 @@
-import { getNodeAtPath, getNodeValueText, type SecsSmlNode } from '../secs-log/sml'
+﻿import { getNodeAtPath, getNodeValueText, type SecsSmlNode } from '../secs-log/sml'
 
 export function cleanSecsValue(value: string) {
   return value

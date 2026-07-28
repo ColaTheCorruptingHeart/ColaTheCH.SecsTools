@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div
     ref="pageRoot"
     class="relative h-full flex flex-col gap-4"

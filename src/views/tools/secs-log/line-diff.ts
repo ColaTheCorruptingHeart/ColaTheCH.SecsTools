@@ -1,4 +1,4 @@
-export type LineDiffKind = 'equal' | 'delete' | 'insert' | 'replace'
+﻿export type LineDiffKind = 'equal' | 'delete' | 'insert' | 'replace'
 
 export interface LineDiffRow {
   kind: LineDiffKind

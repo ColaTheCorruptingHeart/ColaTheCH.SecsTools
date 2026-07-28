@@ -1,4 +1,4 @@
-import type { SecsSemanticEvent } from './types'
+﻿import type { SecsSemanticEvent } from './types'
 
 const TRANSACTION_REPLY_WINDOW = 8
 

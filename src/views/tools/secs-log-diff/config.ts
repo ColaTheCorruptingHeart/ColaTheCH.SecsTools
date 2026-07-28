@@ -1,4 +1,4 @@
-export const SECS_LOG_DIFF_LIMITS = {
+﻿export const SECS_LOG_DIFF_LIMITS = {
   softTextBytes: 20 * 1024 * 1024,
   hardTextBytes: 50 * 1024 * 1024,
   softMessageCount: 10_000,

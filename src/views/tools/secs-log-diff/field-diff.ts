@@ -1,4 +1,4 @@
-import type { SecsFieldDiff, SecsSemanticEvent } from './types'
+﻿import type { SecsFieldDiff, SecsSemanticEvent } from './types'
 
 export function diffEventAttributes(baseline: SecsSemanticEvent, target: SecsSemanticEvent): SecsFieldDiff[] {
   const fieldNames = new Set([...Object.keys(baseline.attributes), ...Object.keys(target.attributes)])

@@ -1,4 +1,4 @@
-import type { AckRule, SecsLogDiffSeverity, SecsSemanticEvent } from './types'
+﻿import type { AckRule, SecsLogDiffSeverity, SecsSemanticEvent } from './types'
 
 const DEFAULT_ACK_MEANING: Record<string, Record<string, string>> = {
   HCACK: {

@@ -1,4 +1,4 @@
-此文件解释 Visual Studio 如何创建项目。
+﻿此文件解释 Visual Studio 如何创建项目。
 
 以下工具用于生成此项目:
 - create-vite

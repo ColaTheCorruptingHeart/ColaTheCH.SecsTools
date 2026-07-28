@@ -1,4 +1,4 @@
-import type { LogMessageBlock } from '../secs-log/types'
+﻿import type { LogMessageBlock } from '../secs-log/types'
 
 export type { LogMessageBlock } from '../secs-log/types'
 

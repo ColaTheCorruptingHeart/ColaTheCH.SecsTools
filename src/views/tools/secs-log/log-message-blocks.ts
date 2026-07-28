@@ -1,4 +1,4 @@
-import {
+﻿import {
   matchHeaderLine,
   matchStandaloneSfLine,
   matchTimePrefixLine

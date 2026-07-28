@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   RecipeBodyBasicAnalysis,
   RecipeBodyDetectionResult,
   RecipeBodyNormalizationResult,

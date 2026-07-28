@@ -1,4 +1,4 @@
-import { diffLines, type Change } from 'diff'
+﻿import { diffLines, type Change } from 'diff'
 
 export type DiffBarKind = 'insert' | 'delete' | 'replace'
 

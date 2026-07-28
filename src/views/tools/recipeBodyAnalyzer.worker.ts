@@ -1,4 +1,4 @@
-/// <reference lib="webworker" />
+﻿/// <reference lib="webworker" />
 
 import { analyzeRecipeBodyBytes } from './recipe-body-analyzer/analysis'
 import { normalizeRecipeBodyInput, recommendRecipeBodyTextEncoding, resolveRecipeBodyOutput } from './recipe-body-analyzer/input'

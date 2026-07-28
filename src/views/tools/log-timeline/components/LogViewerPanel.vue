@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden min-h-75 lg:min-h-0">
     <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center justify-between gap-3">
       <div class="font-medium text-sm text-slate-600 dark:text-slate-300">日志内容</div>

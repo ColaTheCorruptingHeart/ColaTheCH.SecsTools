@@ -1,4 +1,4 @@
-import SparkMD5 from 'spark-md5'
+﻿import SparkMD5 from 'spark-md5'
 import type { RecipeBodyBasicAnalysis, RecipeBodyCandidateFormat, RecipeBodyNewlineStats } from './types'
 
 export async function analyzeRecipeBodyBytes(bytes: Uint8Array): Promise<RecipeBodyBasicAnalysis> {

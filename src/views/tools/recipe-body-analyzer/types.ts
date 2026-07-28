@@ -1,4 +1,4 @@
-export type RecipeBodyInputType = 'auto' | 'hex' | 'decimal-array' | 'base64'
+﻿export type RecipeBodyInputType = 'auto' | 'hex' | 'decimal-array' | 'base64'
 
 export type RecipeBodyResolvedInputType = Exclude<RecipeBodyInputType, 'auto'> | 'text'
 

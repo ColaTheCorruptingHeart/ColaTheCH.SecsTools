@@ -1,4 +1,4 @@
-import type { SecsLogDialect, SecsLogDialectMatch, SecsLogMessageHeaderMatch } from './types'
+﻿import type { SecsLogDialect, SecsLogDialectMatch, SecsLogMessageHeaderMatch } from './types'
 
 const STANDALONE_SF_PATTERN = /^(S\d+F\d+)(?:\s+W)?$/i
 const LEGACY_HEADER_PATTERN = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+((?:S\d+F\d+)(?::S\d+F\d+)*)\b/i

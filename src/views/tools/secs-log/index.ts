@@ -1,4 +1,4 @@
-export * from './diff-overview'
+﻿export * from './diff-overview'
 export * from './line-diff'
 export * from './log-dialect'
 export * from './log-message-blocks'

@@ -1,4 +1,4 @@
-export {
+﻿export {
   buildFormattedResult,
   extractHeader,
   formatSecsSml,

@@ -1,4 +1,4 @@
-import { buildLogMessageBlocks, findBlockByLine, splitLogLines } from './parser'
+﻿import { buildLogMessageBlocks, findBlockByLine, splitLogLines } from './parser'
 import type { ExportedMatchedBlock, LogMessageBlock, TimelineItem } from './types'
 
 const EXPORT_HEADER_PATTERN = /(?:SEND|RECV)\s+((?:S\d+F\d+)(?::S\d+F\d+)*)\b(\s+W\b)?/i

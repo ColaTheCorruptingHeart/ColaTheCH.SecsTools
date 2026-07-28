@@ -1,4 +1,4 @@
-export interface TextMetrics {
+﻿export interface TextMetrics {
   chars: number
   lines: number
 }

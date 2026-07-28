@@ -1,4 +1,4 @@
-import { parseSmlTree, type SecsSmlNode } from '../secs-log/sml'
+﻿import { parseSmlTree, type SecsSmlNode } from '../secs-log/sml'
 import { evaluateAck } from './ack'
 import {
   cleanSecsValue,

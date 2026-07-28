@@ -1,4 +1,4 @@
-import { getAckSeverity, getAckSummary } from './ack'
+﻿import { getAckSeverity, getAckSummary } from './ack'
 import { diffEventAttributes } from './field-diff'
 import type {
   SecsDiffItem,

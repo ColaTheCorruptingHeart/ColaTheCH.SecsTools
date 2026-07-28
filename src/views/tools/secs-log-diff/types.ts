@@ -1,4 +1,4 @@
-export type SecsLogDiffSide = 'baseline' | 'target'
+﻿export type SecsLogDiffSide = 'baseline' | 'target'
 export type SecsLogDiffKind =
   | 'equal'
   | 'added'

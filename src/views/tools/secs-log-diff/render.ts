@@ -1,4 +1,4 @@
-import { countLines } from '../secs-log/text-metrics'
+﻿import { countLines } from '../secs-log/text-metrics'
 import type {
   SecsDiffItem,
   SecsDiffRenderRow,

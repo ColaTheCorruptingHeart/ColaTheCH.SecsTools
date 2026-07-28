@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div :class="['h-full flex px-2 py-4', splitMode === 'horizontal' ? 'flex-row' : 'flex-col gap-2']">
     <!-- 上半部分：工具列表 -->
     <div class="flex-1 overflow-y-auto px-1 custom-scrollbar">

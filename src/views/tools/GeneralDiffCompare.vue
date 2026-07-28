@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div ref="pageRoot" class="general-diff-page">
     <section
       v-if="hasCompared"
