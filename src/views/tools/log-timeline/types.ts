@@ -1,3 +1,7 @@
+import type { LogMessageBlock } from '../secs-log/types'
+
+export type { LogMessageBlock } from '../secs-log/types'
+
 export type CeidMatchMode = 'S6F11' | 'S6F3'
 
 export interface RuleItem {
@@ -25,12 +29,6 @@ export interface TimelineItem {
   desc: string
   line: number
   type?: 'CEID' | 'SxFy'
-}
-
-export interface LogMessageBlock {
-  startLine: number
-  contentStartLine: number
-  endLine: number
 }
 
 export interface ExportedMatchedBlock {
