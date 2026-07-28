@@ -36,6 +36,8 @@
           :style="{ top: getScrollMarkerTop(item.line), backgroundColor: getMarkerColor(item.ceid, item.type, item.ruleId) }"
         ></div>
       </div>
+
+      <slot name="body-actions"></slot>
     </div>
   </div>
 </template>

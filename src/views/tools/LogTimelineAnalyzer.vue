@@ -60,6 +60,19 @@
             <input type="file" ref="fileInput" class="hidden" accept=".log,.txt" multiple @change="onFileSelected" />
           </div>
         </template>
+        <template #body-actions>
+          <el-button
+            v-if="canExportMarkedRange"
+            class="log-range-export-button"
+            type="primary"
+            circle
+            title="导出标记区间"
+            aria-label="导出标记区间"
+            @click="exportMarkedRangeLogs"
+          >
+            <el-icon><Download /></el-icon>
+          </el-button>
+        </template>
       </LogViewerPanel>
 
       <!-- Right: Timeline -->
@@ -112,6 +125,15 @@
       <button class="log-block-context-menu__item" type="button" @click="sendContextMenuMessageBlockToSecsSmlFormatter">
         发送至SML格式化
       </button>
+      <button class="log-block-context-menu__item" type="button" @click="markContextMenuBlockAsRangeStart">
+        标记区间起始点
+      </button>
+      <button class="log-block-context-menu__item" type="button" @click="markContextMenuBlockAsRangeEnd">
+        标记区间结束点
+      </button>
+      <button class="log-block-context-menu__item" type="button" :disabled="!hasMarkedRangePoint" @click="clearRangeMarkers(true)">
+        清除区间标记
+      </button>
       <button class="log-block-context-menu__item" type="button" @click="recordContextMenuMessageBlockToDiff('left')">
         记录至Diff-L
       </button>
@@ -147,6 +169,7 @@
 import { ref, shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Download } from '@element-plus/icons-vue'
 import { EditorView, lineNumbers, Decoration } from '@codemirror/view'
 import { Compartment, EditorState, Range, Text } from '@codemirror/state'
 import JSZip from 'jszip'
@@ -241,6 +264,8 @@ const messageBlockContextMenu = ref<{
   block: null,
   selectedText: ''
 })
+const rangeStartBlock = ref<LogMessageBlock | null>(null)
+const rangeEndBlock = ref<LogMessageBlock | null>(null)
 
 const viewRef = shallowRef<EditorView>()
 let hoveredMessageBlockKey = ''
@@ -458,6 +483,14 @@ const canSendRecordedLogsToDiff = computed(() => {
   return Boolean(recordedDiffLeftText.value && recordedDiffRightText.value)
 })
 
+const hasMarkedRangePoint = computed(() => {
+  return Boolean(rangeStartBlock.value || rangeEndBlock.value)
+})
+
+const canExportMarkedRange = computed(() => {
+  return Boolean(logContent.value && rangeStartBlock.value && rangeEndBlock.value)
+})
+
 const markerSamplingEnabled = computed(() => {
   return renderedMarkerItems.value.length < filteredTimelineData.value.length
 })
@@ -664,6 +697,46 @@ const getHoverBlockExtension = (block: LogMessageBlock | null, doc: Text) => {
   return Decoration.set(builder, true)
 }
 
+const addMarkedBlockLines = (lineClassMap: Map<number, string[]>, block: LogMessageBlock | null, className: string, doc: Text) => {
+  if (!block) {
+    return
+  }
+
+  const startLine = Math.max(1, block.startLine)
+  const endLine = Math.min(doc.lines, block.endLine)
+  for (let lineNumber = startLine; lineNumber <= endLine; lineNumber += 1) {
+    const classes = lineClassMap.get(lineNumber) || []
+    classes.push(className)
+    lineClassMap.set(lineNumber, classes)
+  }
+}
+
+const getRangeMarkExtension = (doc: Text) => {
+  const lineClassMap = new Map<number, string[]>()
+  addMarkedBlockLines(lineClassMap, rangeStartBlock.value, 'cm-log-range-start', doc)
+  addMarkedBlockLines(lineClassMap, rangeEndBlock.value, 'cm-log-range-end', doc)
+
+  const builder: Array<Range<Decoration>> = []
+  lineClassMap.forEach((classes, lineNumber) => {
+    const lineData = doc.line(lineNumber)
+    const markDecoration = Decoration.line({ attributes: { class: classes.join(' ') } })
+    builder.push(markDecoration.range(lineData.from, lineData.from))
+  })
+
+  builder.sort((left, right) => left.from - right.from)
+  return Decoration.set(builder, true)
+}
+
+const updateRangeMarkHighlights = () => {
+  if (!viewRef.value) {
+    return
+  }
+
+  viewRef.value.dispatch({
+    effects: rangeMarkCompartment.reconfigure(EditorView.decorations.of(getRangeMarkExtension(viewRef.value.state.doc)))
+  })
+}
+
 const updateHoveredMessageBlock = (block: LogMessageBlock | null) => {
   const nextKey = getMessageBlockKey(block)
   if (nextKey === hoveredMessageBlockKey) {
@@ -701,7 +774,7 @@ const closeMessageBlockContextMenu = () => {
 
 const getContextMenuPosition = (event: MouseEvent) => {
   const menuWidth = 148
-  const menuHeight = 220
+  const menuHeight = 316
   const margin = 8
 
   return {
@@ -861,6 +934,43 @@ const sendContextMenuMessageBlockToSecsSmlFormatter = () => {
   }
 }
 
+const markContextMenuBlockAsRangeStart = () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  rangeStartBlock.value = block
+  updateRangeMarkHighlights()
+  closeMessageBlockContextMenu()
+  ElMessage.success('已标记区间起始点')
+}
+
+const markContextMenuBlockAsRangeEnd = () => {
+  const block = messageBlockContextMenu.value.block
+  if (!block) {
+    closeMessageBlockContextMenu()
+    return
+  }
+
+  rangeEndBlock.value = block
+  updateRangeMarkHighlights()
+  closeMessageBlockContextMenu()
+  ElMessage.success('已标记区间结束点')
+}
+
+const clearRangeMarkers = (showMessage = false) => {
+  rangeStartBlock.value = null
+  rangeEndBlock.value = null
+  updateRangeMarkHighlights()
+  closeMessageBlockContextMenu()
+
+  if (showMessage) {
+    ElMessage.success('已清除区间标记')
+  }
+}
+
 const recordContextMenuMessageBlockToDiff = (side: 'left' | 'right') => {
   const block = messageBlockContextMenu.value.block
   if (!block) {
@@ -922,7 +1032,7 @@ const sendRecordedLogsToGeneralDiffCompare = () => {
 
 const rebuildLogMessageBlocks = (content: string | null) => {
   logMessageBlocks.value = content ? buildLogMessageBlocks(splitLogLines(content)) : []
-  closeMessageBlockContextMenu()
+  clearRangeMarkers()
   clearHoveredMessageBlock()
 }
 
@@ -1160,6 +1270,34 @@ const downloadTextFile = (content: string, fileName: string) => {
   downloadBlobFile(new Blob([content], { type: 'text/plain;charset=utf-8' }), fileName)
 }
 
+const getTimestampText = () => {
+  const now = new Date()
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
+}
+
+const exportMarkedRangeLogs = () => {
+  if (!logContent.value || !rangeStartBlock.value || !rangeEndBlock.value) {
+    ElMessage.warning('请先标记区间起始点和区间结束点')
+    return
+  }
+
+  if (rangeStartBlock.value.startLine > rangeEndBlock.value.endLine) {
+    ElMessage.warning('区间起始点不能晚于区间结束点')
+    return
+  }
+
+  const lines = splitLogLines(logContent.value)
+  const exportLines = lines.slice(rangeStartBlock.value.startLine - 1, rangeEndBlock.value.endLine)
+  if (!exportLines.length) {
+    ElMessage.warning('标记区间没有可导出的日志')
+    return
+  }
+
+  const timestamp = getTimestampText()
+  downloadTextFile(`${exportLines.join('\n')}\n`, `timeline-marked-range-${timestamp}.log`)
+  ElMessage.success(`已导出第 ${rangeStartBlock.value.startLine.toLocaleString()} 行至第 ${rangeEndBlock.value.endLine.toLocaleString()} 行`)
+}
+
 const getExportCandidateTimelineItems = () => {
   if (!logContent.value) {
     ElMessage.warning('请先加载日志文件')
@@ -1256,6 +1394,7 @@ const syncScrollGeometry = (view: EditorView) => {
 // CodeMirror Extensions Setup
 const highlightCompartment = new Compartment()
 const hoverBlockCompartment = new Compartment()
+const rangeMarkCompartment = new Compartment()
 const baseTheme = EditorView.theme({
   ".cm-scroller": {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important',
@@ -1264,6 +1403,15 @@ const baseTheme = EditorView.theme({
   ".cm-log-hover-block": {
     backgroundImage: 'linear-gradient(90deg, rgba(14, 165, 233, 0.18), rgba(14, 165, 233, 0.07)) !important',
     boxShadow: 'inset 3px 0 0 #0ea5e9'
+  },
+  ".cm-log-range-start": {
+    boxShadow: 'inset 4px 0 0 #10b981'
+  },
+  ".cm-log-range-end": {
+    boxShadow: 'inset 4px 0 0 #ef4444'
+  },
+  ".cm-log-range-start.cm-log-range-end": {
+    boxShadow: 'inset 4px 0 0 #10b981, inset 8px 0 0 #ef4444'
   }
 })
 
@@ -1296,6 +1444,7 @@ const extensions = [
   EditorState.readOnly.of(true),
   highlightCompartment.of(EditorView.decorations.of(Decoration.none)),
   hoverBlockCompartment.of(EditorView.decorations.of(Decoration.none)),
+  rangeMarkCompartment.of(EditorView.decorations.of(Decoration.none)),
   EditorView.updateListener.of((update) => {
     if (update.geometryChanged || update.docChanged) {
        editorTotalLines.value = update.view.state.doc.lines
@@ -1324,6 +1473,7 @@ const handleReady = (payload: { view: EditorView }) => {
     editorTotalLines.value = payload.view.state.doc.lines
     syncScrollGeometry(payload.view)
     updateHighlights()
+    updateRangeMarkHighlights()
   }
 }
 
@@ -1565,6 +1715,7 @@ const clearAllData = () => {
     filterSxFy.value = ''
     filterDesc.value = []
     clearRecordedDiffLogs()
+    clearRangeMarkers()
     if (fileInput.value) fileInput.value.value = ''
     if (viewRef.value) {
       viewRef.value.dispatch({
@@ -1682,6 +1833,17 @@ const jumpToLine = (lineNumber: number) => {
   font-size: 14px;
   font-weight: 600;
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+}
+
+.log-range-export-button {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.24), 0 4px 10px rgba(37, 99, 235, 0.28);
 }
 
 .log-block-context-menu {

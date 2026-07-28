@@ -208,6 +208,7 @@ let activeWorker: Worker | null = null
 let syncingScroll = false
 let highlightFrame: number | undefined
 let flashTimer: number | undefined
+let autoOpenDialogTimer: number | undefined
 
 const baselineDecorationCompartment = new Compartment()
 const targetDecorationCompartment = new Compartment()
@@ -1201,7 +1202,9 @@ watch(selectedRowId, updateHighlights)
 
 onMounted(() => {
   applyPagePadding()
-  inputDialogVisible.value = true
+  autoOpenDialogTimer = window.setTimeout(() => {
+    inputDialogVisible.value = true
+  }, 250)
   document.addEventListener('click', handleDocumentClick)
   window.addEventListener('resize', handleWindowResize)
   window.addEventListener('keydown', handleWindowKeydown)
@@ -1217,6 +1220,9 @@ onUnmounted(() => {
   }
   if (flashTimer !== undefined) {
     window.clearTimeout(flashTimer)
+  }
+  if (autoOpenDialogTimer !== undefined) {
+    window.clearTimeout(autoOpenDialogTimer)
   }
   restorePagePadding()
 })

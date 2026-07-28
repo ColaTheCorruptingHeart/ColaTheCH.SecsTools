@@ -143,15 +143,6 @@ export const toolsConfig: ToolCategory[] = [
         icon: 'Connection',
         color: '#f59e0b',
         componentPath: 'SecsLogDiffAnalyzer'
-      },
-      {
-        id: 'log-diff-analyzer',
-        name: '日志差异分析',
-        desc: '粘贴两份日志内容，进行基础行级差异对比，适合快速定位日志变化。',
-        path: '/tools/log-diff-analyzer',
-        icon: 'Files',
-        color: '#0ea5e9', // sky-500
-        componentPath: 'LogDiffAnalyzer'
       }
     ]
   },
