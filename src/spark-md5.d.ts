@@ -1,4 +1,4 @@
-declare module 'spark-md5' {
+﻿declare module 'spark-md5' {
   interface SparkMd5ArrayBuffer {
     hash(buffer: ArrayBufferLike, raw?: boolean): string
   }

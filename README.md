@@ -1,4 +1,4 @@
-# SECS Tools
+﻿# SECS Tools
 
 SECS Tools 是一个纯粹的 Vibe Coding 项目，它是一个面向半导体设备联机、调试与日志分析场景的前端工具箱，聚焦 SECS/HSMS 相关报文处理、辅助解析与现场排障效率提升。
 

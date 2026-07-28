@@ -1,4 +1,4 @@
-/// <reference lib="webworker" />
+﻿/// <reference lib="webworker" />
 
 import { getNodeValueText, parseSmlTree, type SecsSmlNode } from './secsSml'
 

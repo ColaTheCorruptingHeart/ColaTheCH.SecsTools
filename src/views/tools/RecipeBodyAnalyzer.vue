@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="h-full flex flex-col gap-4" v-loading="loading" :element-loading-text="loadingText">
     <input ref="txtFileInputRef" type="file" accept=".txt,text/plain" class="hidden" @change="handleTxtFileChange" />
     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex-none">

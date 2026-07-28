@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="h-full flex flex-col gap-4" v-loading="loading" :element-loading-text="loadingText">
 
     <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">

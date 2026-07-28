@@ -1,1 +1,2 @@
-* text=auto eol=lf
+﻿# Keep repository text files on Windows line endings.
+* text=auto eol=crlf

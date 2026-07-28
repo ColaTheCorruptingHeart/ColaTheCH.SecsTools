@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="scratchpad-container flex flex-col h-full bg-white border-t border-slate-200">
     <div class="scratchpad-header flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-100 bg-slate-50 shrink-0">
       <div class="flex min-w-0 flex-1 items-center gap-2">

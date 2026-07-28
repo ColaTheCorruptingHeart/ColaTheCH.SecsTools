@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="h-full flex flex-col gap-4">
     <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 h-0 min-h-[500px]">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">

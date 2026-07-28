@@ -1,4 +1,4 @@
-const LOG_DIFF_TRANSFER_STORAGE_PREFIX = 'secsTools_logDiffTransfer_'
+﻿const LOG_DIFF_TRANSFER_STORAGE_PREFIX = 'secsTools_logDiffTransfer_'
 
 export interface LogDiffTransferPayload {
   left: string

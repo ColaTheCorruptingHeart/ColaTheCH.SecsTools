@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-container class="h-screen w-full bg-slate-50">
     <el-aside
       :width="isCollapse ? '64px' : '240px'"

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="lg:w-64 xl:w-72 flex-shrink-0 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-[500px] lg:h-full overflow-hidden">
     <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 p-2 font-medium text-sm grid grid-cols-[minmax(0,1fr)_72px_auto] items-center gap-1.5 text-slate-600 dark:text-slate-300 flex-none">
       <div class="min-w-0 truncate">

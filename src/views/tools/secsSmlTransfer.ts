@@ -1,4 +1,4 @@
-const SECS_SML_TRANSFER_STORAGE_PREFIX = 'secsTools_secsSmlTransfer_'
+﻿const SECS_SML_TRANSFER_STORAGE_PREFIX = 'secsTools_secsSmlTransfer_'
 
 function createTransferId() {
   if (globalThis.crypto?.randomUUID) {

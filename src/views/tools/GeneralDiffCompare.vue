@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div ref="pageRoot" class="general-diff-page">
     <section
       v-if="hasCompared"
@@ -138,9 +138,9 @@ import { Compartment, type Extension } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { ElMessage } from 'element-plus'
 import { CodeDiff } from 'v-code-diff'
-import { diffLines, type Change } from 'diff'
 import { consumeLogDiffTransferPayload } from './logDiffTransfer'
 import { formatSecsSml } from './secsSml'
+import { buildDiffBarMarks, type DiffBarMark } from './secs-log/diff-overview'
 
 interface TextMetrics {
   chars: number
@@ -155,20 +155,7 @@ interface CodeDiffResult {
   }
 }
 
-type DiffBarKind = 'insert' | 'delete' | 'replace'
 type PreformatMode = 'plain' | 'json' | 'xml' | 'sml'
-
-interface RawDiffBarMark {
-  kind: DiffBarKind
-  startLine: number
-  lineCount: number
-}
-
-interface DiffBarMark {
-  kind: DiffBarKind
-  top: number
-  height: number
-}
 
 interface PreparedComparisonTexts {
   left: string
@@ -180,7 +167,6 @@ const LARGE_TEXT_CHAR_LIMIT = 300_000
 const LARGE_TEXT_LINE_LIMIT = 10_000
 const HARD_TEXT_CHAR_LIMIT = 2_500_000
 const HARD_TEXT_LINE_LIMIT = 80_000
-const MAX_DIFF_BAR_MARKS = 420
 
 const pageRoot = ref<HTMLDivElement | null>(null)
 const diffResultWrap = ref<HTMLDivElement | null>(null)
@@ -341,140 +327,6 @@ const prepareComparisonTexts = (left: string, right: string): PreparedComparison
     ElMessage.warning(`${preformatModeLabels[mode]}失败，已按普通文本对比`)
     return { left, right, label: '' }
   }
-}
-
-const getChangeLineCount = (change: Change) => {
-  const value = change.value.replace(/\n$/, '')
-  if (!value) {
-    return 0
-  }
-
-  return value.split('\n').length
-}
-
-const getDiffBarPriority = (kind: DiffBarKind) => {
-  if (kind === 'replace') {
-    return 3
-  }
-
-  return 2
-}
-
-const toPercentMarks = (marks: RawDiffBarMark[], totalLines: number): DiffBarMark[] => {
-  return marks.map(mark => ({
-    kind: mark.kind,
-    top: Math.max(0, Math.min(100, (mark.startLine / totalLines) * 100)),
-    height: Math.max(0.45, Math.min(100, (mark.lineCount / totalLines) * 100))
-  }))
-}
-
-const mergeRawDiffBarMarks = (marks: RawDiffBarMark[]) => {
-  const merged: RawDiffBarMark[] = []
-
-  marks.forEach(mark => {
-    if (mark.lineCount <= 0) {
-      return
-    }
-
-    const previous = merged[merged.length - 1]
-    if (previous && previous.kind === mark.kind && mark.startLine <= previous.startLine + previous.lineCount + 1) {
-      previous.lineCount = Math.max(previous.lineCount, mark.startLine + mark.lineCount - previous.startLine)
-      return
-    }
-
-    merged.push({ ...mark })
-  })
-
-  return merged
-}
-
-const aggregateDiffBarMarks = (marks: RawDiffBarMark[], totalLines: number): DiffBarMark[] => {
-  const buckets: Array<DiffBarKind | null> = Array.from({ length: MAX_DIFF_BAR_MARKS }, () => null)
-
-  marks.forEach(mark => {
-    const startBucket = Math.max(0, Math.floor((mark.startLine / totalLines) * MAX_DIFF_BAR_MARKS))
-    const endBucket = Math.min(
-      MAX_DIFF_BAR_MARKS - 1,
-      Math.floor(((mark.startLine + mark.lineCount) / totalLines) * MAX_DIFF_BAR_MARKS)
-    )
-
-    for (let bucketIndex = startBucket; bucketIndex <= endBucket; bucketIndex += 1) {
-      const current = buckets[bucketIndex]
-      if (!current || getDiffBarPriority(mark.kind) >= getDiffBarPriority(current)) {
-        buckets[bucketIndex] = mark.kind
-      }
-    }
-  })
-
-  const aggregated: RawDiffBarMark[] = []
-  buckets.forEach((kind, bucketIndex) => {
-    if (!kind) {
-      return
-    }
-
-    const startLine = (bucketIndex / MAX_DIFF_BAR_MARKS) * totalLines
-    const lineCount = totalLines / MAX_DIFF_BAR_MARKS
-    const previous = aggregated[aggregated.length - 1]
-
-    if (previous && previous.kind === kind) {
-      previous.lineCount += lineCount
-      return
-    }
-
-    aggregated.push({ kind, startLine, lineCount })
-  })
-
-  return toPercentMarks(aggregated, totalLines)
-}
-
-const buildDiffBarMarks = (oldText: string, newText: string): DiffBarMark[] => {
-  const changes = diffLines(oldText, newText)
-  const rawMarks: RawDiffBarMark[] = []
-  let visualLine = 0
-
-  for (let index = 0; index < changes.length; index += 1) {
-    const change = changes[index]
-    if (!change) {
-      continue
-    }
-
-    const nextChange = changes[index + 1]
-    const lineCount = getChangeLineCount(change)
-
-    if (change.removed && nextChange?.added) {
-      const nextLineCount = getChangeLineCount(nextChange)
-      const pairedLineCount = Math.max(lineCount, nextLineCount)
-      rawMarks.push({ kind: 'replace', startLine: visualLine, lineCount: pairedLineCount })
-      visualLine += pairedLineCount
-      index += 1
-      continue
-    }
-
-    if (change.removed) {
-      rawMarks.push({ kind: 'delete', startLine: visualLine, lineCount })
-      visualLine += lineCount
-      continue
-    }
-
-    if (change.added) {
-      rawMarks.push({ kind: 'insert', startLine: visualLine, lineCount })
-      visualLine += lineCount
-      continue
-    }
-
-    visualLine += lineCount
-  }
-
-  const mergedMarks = mergeRawDiffBarMarks(rawMarks)
-  if (!visualLine || mergedMarks.length === 0) {
-    return []
-  }
-
-  if (mergedMarks.length > MAX_DIFF_BAR_MARKS) {
-    return aggregateDiffBarMarks(mergedMarks, visualLine)
-  }
-
-  return toPercentMarks(mergedMarks, visualLine)
 }
 
 const syncDiffOverviewGeometry = () => {

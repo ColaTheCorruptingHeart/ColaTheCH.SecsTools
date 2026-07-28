@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <el-dialog v-model="visibleModel" :title="isEdit ? '编辑 SxFy 规则' : '添加 SxFy 规则'" width="450px" destroy-on-close>
     <el-form :model="localForm" label-width="110px" size="default">
       <el-form-item label="Stream (S)">

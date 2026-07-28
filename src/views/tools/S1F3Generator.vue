@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="h-full min-h-0">
     <div class="flex h-full min-h-0 flex-col gap-3">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3">
