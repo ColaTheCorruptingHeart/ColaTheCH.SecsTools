@@ -136,6 +136,15 @@ export const toolsConfig: ToolCategory[] = [
         componentPath: 'LogTimelineAnalyzer'
       },
       {
+        id: 'secs-log-diff-analyzer',
+        name: 'SECS日志语义差异',
+        desc: '对比两份 SECS/SML 作业日志，按消息块和关键语义进行差异定位。',
+        path: '/tools/secs-log-diff-analyzer',
+        icon: 'Connection',
+        color: '#f59e0b',
+        componentPath: 'SecsLogDiffAnalyzer'
+      },
+      {
         id: 'log-diff-analyzer',
         name: '日志差异分析',
         desc: '粘贴两份日志内容，进行基础行级差异对比，适合快速定位日志变化。',
