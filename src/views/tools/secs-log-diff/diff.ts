@@ -9,6 +9,11 @@ import type {
   SecsSemanticEvent
 } from './types'
 
+interface MatchedClassification {
+  kind: SecsLogDiffKind
+  fieldDiffs: SecsFieldDiff[]
+}
+
 function normalizeRawText(text: string) {
   return text
     .replace(/\r\n/g, '\n')
@@ -118,38 +123,33 @@ function createDiffItem(
   }
 }
 
-function classifyMatchedItem(baseline: SecsSemanticEvent, target: SecsSemanticEvent, score: number) {
+function classifyMatchedItem(baseline: SecsSemanticEvent, target: SecsSemanticEvent, score: number): MatchedClassification {
   if (baseline.type === 'parse_error' || target.type === 'parse_error') {
-    return 'parse_error'
+    return { kind: 'parse_error', fieldDiffs: [] }
   }
 
   if ((baseline.ack && !baseline.ack.ok) || (target.ack && !target.ack.ok)) {
-    return 'ack_error'
+    return { kind: 'ack_error', fieldDiffs: diffEventAttributes(baseline, target) }
   }
 
   if (score < 100) {
-    return 'changed'
+    return { kind: 'changed', fieldDiffs: diffEventAttributes(baseline, target) }
   }
 
   const shouldCompareFields = baseline.diffMode === 'field' || target.diffMode === 'field'
-  if (shouldCompareFields && diffEventAttributes(baseline, target).length > 0) {
-    return 'field_changed'
+  if (shouldCompareFields) {
+    const fieldDiffs = diffEventAttributes(baseline, target)
+    if (fieldDiffs.length > 0) {
+      return { kind: 'field_changed', fieldDiffs }
+    }
   }
 
   const shouldCompareRaw = baseline.diffMode === 'raw' || target.diffMode === 'raw'
   if (shouldCompareRaw && normalizeRawText(baseline.rawText) !== normalizeRawText(target.rawText)) {
-    return 'changed'
+    return { kind: 'changed', fieldDiffs: diffEventAttributes(baseline, target) }
   }
 
-  return 'equal'
-}
-
-function getMatchedFieldDiffs(kind: SecsLogDiffKind, baselineEvent: SecsSemanticEvent, targetEvent: SecsSemanticEvent) {
-  if (kind === 'field_changed' || kind === 'ack_error' || kind === 'changed') {
-    return diffEventAttributes(baselineEvent, targetEvent)
-  }
-
-  return []
+  return { kind: 'equal', fieldDiffs: [] }
 }
 
 export function diffEventSequences(
@@ -210,15 +210,15 @@ export function diffEventSequences(
       continue
     }
 
-    const kind = classifyMatchedItem(baselineEvent, targetEvent, bestScore)
-    if (kind !== 'equal' || options.includeEqualRows) {
+    const classification = classifyMatchedItem(baselineEvent, targetEvent, bestScore)
+    if (classification.kind !== 'equal' || options.includeEqualRows) {
       result.push(
         createDiffItem(
           `diff-${result.length + 1}`,
-          kind,
+          classification.kind,
           baselineEvent,
           targetEvent,
-          getMatchedFieldDiffs(kind, baselineEvent, targetEvent)
+          classification.fieldDiffs
         )
       )
     }

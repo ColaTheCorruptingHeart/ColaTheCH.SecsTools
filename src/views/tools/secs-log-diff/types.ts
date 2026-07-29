@@ -76,6 +76,8 @@ export interface SecsLogMessage {
   parseError?: string
 }
 
+export type SecsLogMessageMeta = Omit<SecsLogMessage, 'rawText'>
+
 export interface SecsSemanticEvent {
   id: string
   messageId: string
@@ -162,8 +164,8 @@ export interface SecsLogDiffResult {
   targetText: string
   rows: SecsDiffRenderRow[]
   messages: {
-    baseline: SecsLogMessage[]
-    target: SecsLogMessage[]
+    baseline: SecsLogMessageMeta[]
+    target: SecsLogMessageMeta[]
   }
   stats: SecsLogDiffStats
   warnings: string[]

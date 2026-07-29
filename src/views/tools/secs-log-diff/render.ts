@@ -3,8 +3,11 @@ import type {
   SecsDiffItem,
   SecsDiffRenderRow,
   SecsLogDiffResult,
+  SecsLogDiffKind,
+  SecsLogDiffSide,
   SecsLogDiffStats,
-  SecsLogMessage
+  SecsLogMessage,
+  SecsLogMessageMeta
 } from './types'
 
 function splitDisplayLines(text: string) {
@@ -35,27 +38,65 @@ function buildRowText(leftRawText: string, rightRawText: string) {
   }
 }
 
-function getDiffStats(
+function createInitialStats(
   baselineSourceText: string,
   targetSourceText: string,
   baselineMessages: SecsLogMessage[],
-  targetMessages: SecsLogMessage[],
-  rows: SecsDiffRenderRow[]
+  targetMessages: SecsLogMessage[]
 ): SecsLogDiffStats {
   return {
     baselineLines: countLines(baselineSourceText),
     targetLines: countLines(targetSourceText),
     baselineMessages: baselineMessages.length,
     targetMessages: targetMessages.length,
-    totalRows: rows.length,
-    diffRows: rows.filter(row => row.kind !== 'equal').length,
-    added: rows.filter(row => row.kind === 'added').length,
-    missing: rows.filter(row => row.kind === 'missing').length,
-    changed: rows.filter(row => row.kind === 'changed').length,
-    fieldChanged: rows.filter(row => row.kind === 'field_changed').length,
-    ackError: rows.filter(row => row.kind === 'ack_error').length,
-    parseError: rows.filter(row => row.kind === 'parse_error').length
+    totalRows: 0,
+    diffRows: 0,
+    added: 0,
+    missing: 0,
+    changed: 0,
+    fieldChanged: 0,
+    ackError: 0,
+    parseError: 0
   }
+}
+
+function countRenderedRow(stats: SecsLogDiffStats, kind: SecsLogDiffKind) {
+  stats.totalRows += 1
+
+  if (kind === 'equal') {
+    return
+  }
+
+  stats.diffRows += 1
+  if (kind === 'added') stats.added += 1
+  if (kind === 'missing') stats.missing += 1
+  if (kind === 'changed') stats.changed += 1
+  if (kind === 'field_changed') stats.fieldChanged += 1
+  if (kind === 'ack_error') stats.ackError += 1
+  if (kind === 'parse_error') stats.parseError += 1
+}
+
+function toMessageMeta(message: SecsLogMessage): SecsLogMessageMeta {
+  return {
+    id: message.id,
+    side: message.side,
+    index: message.index,
+    startLine: message.startLine,
+    contentStartLine: message.contentStartLine,
+    endLine: message.endLine,
+    time: message.time,
+    timeMs: message.timeMs,
+    sf: message.sf,
+    parseError: message.parseError
+  }
+}
+
+function toMessageMetaMap(messages: SecsLogMessage[], side: SecsLogDiffSide) {
+  return new Map(
+    messages
+      .filter(message => message.side === side)
+      .map(message => [message.index, toMessageMeta(message)])
+  )
 }
 
 export function buildRenderResult(
@@ -69,6 +110,9 @@ export function buildRenderResult(
   const rows: SecsDiffRenderRow[] = []
   const baselineTextParts: string[] = []
   const targetTextParts: string[] = []
+  const stats = createInitialStats(baselineSourceText, targetSourceText, baselineMessages, targetMessages)
+  const baselineMessageMetaMap = toMessageMetaMap(baselineMessages, 'baseline')
+  const targetMessageMetaMap = toMessageMetaMap(targetMessages, 'target')
   let displayLine = 1
 
   diffItems.forEach(item => {
@@ -103,6 +147,7 @@ export function buildRenderResult(
 
     baselineTextParts.push(rowText.baselineText)
     targetTextParts.push(rowText.targetText)
+    countRenderedRow(stats, item.kind)
     displayLine = displayEndLine + 2
   })
 
@@ -112,10 +157,10 @@ export function buildRenderResult(
     targetText: targetTextParts.join('\n\n'),
     rows: resultRows,
     messages: {
-      baseline: baselineMessages,
-      target: targetMessages
+      baseline: Array.from(baselineMessageMetaMap.values()),
+      target: Array.from(targetMessageMetaMap.values())
     },
-    stats: getDiffStats(baselineSourceText, targetSourceText, baselineMessages, targetMessages, resultRows),
+    stats,
     warnings
   }
 }

@@ -129,17 +129,53 @@ export function cloneDefaultProfile(): SecsLogDiffProfile {
   return JSON.parse(JSON.stringify(DEFAULT_SECS_LOG_DIFF_PROFILE)) as SecsLogDiffProfile
 }
 
-function matchSfPattern(pattern: string, sf: string) {
-  if (pattern.endsWith('*')) {
-    return sf.startsWith(pattern.slice(0, -1))
+interface CompiledProfileRules {
+  exactRules: Map<string, MessageDiffRule>
+  wildcardRules: Array<{ prefix: string, rule: MessageDiffRule }>
+}
+
+const compiledProfileCache = new WeakMap<SecsLogDiffProfile, CompiledProfileRules>()
+
+function getCompiledProfileRules(profile: SecsLogDiffProfile): CompiledProfileRules {
+  const cached = compiledProfileCache.get(profile)
+  if (cached) {
+    return cached
   }
 
-  return pattern === sf
+  const compiled: CompiledProfileRules = {
+    exactRules: new Map(),
+    wildcardRules: []
+  }
+
+  profile.rules.forEach(rule => {
+    if (rule.enabled === false) {
+      return
+    }
+
+    const sf = rule.sf.toUpperCase()
+    if (sf.endsWith('*')) {
+      compiled.wildcardRules.push({ prefix: sf.slice(0, -1), rule })
+      return
+    }
+
+    if (!compiled.exactRules.has(sf)) {
+      compiled.exactRules.set(sf, rule)
+    }
+  })
+
+  compiledProfileCache.set(profile, compiled)
+  return compiled
 }
 
 export function findMessageDiffRule(profile: SecsLogDiffProfile, sf: string): MessageDiffRule | null {
-  const enabledRules = profile.rules.filter(rule => rule.enabled !== false)
-  return enabledRules.find(rule => matchSfPattern(rule.sf.toUpperCase(), sf.toUpperCase())) || null
+  const normalizedSf = sf.toUpperCase()
+  const compiled = getCompiledProfileRules(profile)
+  const exactRule = compiled.exactRules.get(normalizedSf)
+  if (exactRule) {
+    return exactRule
+  }
+
+  return compiled.wildcardRules.find(entry => normalizedSf.startsWith(entry.prefix))?.rule || null
 }
 
 export function normalizeProfile(input: unknown): SecsLogDiffProfile {

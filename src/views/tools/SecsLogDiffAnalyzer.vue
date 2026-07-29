@@ -3,7 +3,6 @@
     <header class="topbar">
       <div class="topbar__title">
         <h1>SECS 日志语义差异</h1>
-        <p>{{ resultSummary }}</p>
       </div>
       <div class="topbar__actions">
         <el-tag effect="plain">{{ activeProfile.name }}</el-tag>
@@ -249,15 +248,6 @@ const selectedRow = computed(() => {
 })
 
 const canAnalyze = computed(() => Boolean(baselineInput.value.trim() || targetInput.value.trim()))
-
-const resultSummary = computed(() => {
-  if (!result.value) {
-    return '等待导入 baseline 与 target'
-  }
-
-  const stats = result.value.stats
-  return `${stats.baselineMessages.toLocaleString()} -> ${stats.targetMessages.toLocaleString()} messages, ${stats.diffRows.toLocaleString()} differences`
-})
 
 const baselineStats = computed(() => {
   if (!result.value) {
@@ -638,7 +628,7 @@ function syncDiffOverviewGeometry() {
 }
 
 function getViewportLineRange(view: EditorView) {
-  if (!viewportHighlightEnabled.value || !view.visibleRanges.length) {
+  if (!view.visibleRanges.length) {
     return null
   }
 
@@ -671,7 +661,9 @@ function getRowDisplayRange(row: SecsDiffRenderRow, side: 'baseline' | 'target')
 
 function getHighlightCandidateRows(rows: SecsDiffRenderRow[], side: 'baseline' | 'target', lineRange: { start: number, end: number } | null) {
   if (!lineRange) {
-    return rows
+    return [hoveredRowId.value, flashingRowId.value]
+      .map(rowId => rows.find(row => row.id === rowId))
+      .filter((row): row is SecsDiffRenderRow => Boolean(row))
   }
 
   let low = 0
@@ -760,10 +752,6 @@ function updateHighlights() {
 }
 
 function scheduleHighlightsUpdate() {
-  if (!viewportHighlightEnabled.value) {
-    return
-  }
-
   if (highlightFrame !== undefined) {
     return
   }

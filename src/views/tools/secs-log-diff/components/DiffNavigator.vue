@@ -3,7 +3,6 @@
     <header class="diff-nav__header">
       <div>
         <h2>差异导航</h2>
-        <p>{{ visibleRows.length }} / {{ diffRows.length }} 项</p>
       </div>
       <el-select :model-value="filter" size="small" class="diff-nav__filter" @update:model-value="emit('update:filter', $event)">
         <el-option label="全部" value="all" />
