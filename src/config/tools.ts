@@ -145,23 +145,6 @@ export const toolsConfig: ToolCategory[] = [
         componentPath: 'SecsLogDiffAnalyzer'
       }
     ]
-  },
-  {
-    id: 'hidden-tools',
-    name: '隐藏工具',
-    icon: 'Hide',
-    tools: [
-      {
-        id: 'scratchpad',
-        name: '随手记',
-        desc: '支持自动分块、高亮渲染的沉浸式文本便签。',
-        path: '/tools/scratchpad',
-        icon: 'EditPen',
-        color: '#6366f1', // indigo-500
-        componentPath: 'ScratchpadView',
-        hidden: true
-      }
-    ]
   }
 ];
 
