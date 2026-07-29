@@ -30,8 +30,10 @@
         >
           <div
             class="h-17 cursor-pointer border-l-[3px] p-2 rounded-r transition-colors group flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+            :class="{ 'timeline-item--flashing': getItemKey(virtualItem.item) === flashingItemKey }"
             :style="{ borderLeftColor: getMarkerColor(virtualItem.item.ceid, virtualItem.item.type, virtualItem.item.ruleId) }"
             @click="emit('jump', virtualItem.item.line)"
+            @dblclick="emit('flashMessageBlock', virtualItem.item.line)"
             @contextmenu.prevent.stop="openTimelineContextMenu(virtualItem.item, $event)"
           >
             <div class="flex justify-between items-center gap-2">
@@ -125,6 +127,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   jump: [lineNumber: number]
+  flashMessageBlock: [lineNumber: number]
   toggleItemChecked: [payload: { key: string, checked: boolean, shiftKey: boolean }]
   timelineContextAction: [payload: { action: 'selectAll' | 'clearAll' | 'selectSameSxFy' | 'selectSameCeid', key?: string }]
   timelineContextMenuOpened: []
@@ -156,6 +159,8 @@ const timelineContextMenu = ref<{
 })
 
 let resizeObserver: ResizeObserver | null = null
+const flashingItemKey = ref('')
+let flashTimer: number | undefined
 
 const visibleRange = computed(() => {
   if (!props.items.length) {
@@ -264,6 +269,33 @@ const handleViewportScroll = () => {
   closeTimelineContextMenu()
 }
 
+const centerAndFlashItem = (key: string) => {
+  const itemIndex = props.items.findIndex(item => props.getItemKey(item) === key)
+  if (itemIndex < 0 || !timelineViewportRef.value) {
+    return
+  }
+
+  const nextScrollTop = Math.max(0, itemIndex * ITEM_HEIGHT - Math.max(0, viewportHeight.value - ITEM_HEIGHT) / 2)
+  timelineViewportRef.value.scrollTop = nextScrollTop
+  scrollTop.value = nextScrollTop
+
+  if (flashTimer !== undefined) {
+    window.clearTimeout(flashTimer)
+    flashTimer = undefined
+  }
+
+  flashingItemKey.value = ''
+  window.requestAnimationFrame(() => {
+    flashingItemKey.value = key
+    flashTimer = window.setTimeout(() => {
+      if (flashingItemKey.value === key) {
+        flashingItemKey.value = ''
+      }
+      flashTimer = undefined
+    }, 1800)
+  })
+}
+
 const handleDocumentClick = () => {
   closeTimelineContextMenu()
 }
@@ -292,8 +324,15 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', handleDocumentClick)
   window.removeEventListener('keydown', handleWindowKeydown)
+  if (flashTimer !== undefined) {
+    window.clearTimeout(flashTimer)
+  }
   resizeObserver?.disconnect()
   resizeObserver = null
+})
+
+defineExpose({
+  centerAndFlashItem
 })
 
 const filterSxFyModel = computed({
@@ -331,6 +370,21 @@ const exportSelectedOnlyModel = computed({
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.timeline-item--flashing {
+  animation: timeline-item-flash 0.55s ease-in-out 3;
+}
+
+@keyframes timeline-item-flash {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+
+  50% {
+    background-color: #dbeafe;
+  }
 }
 
 .timeline-context-menu {

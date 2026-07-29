@@ -77,6 +77,7 @@
 
       <!-- Right: Timeline -->
       <TimelinePanel
+        ref="timelinePanelRef"
         :items="filteredTimelineData"
         :selected-item-keys="selectedTimelineItemKeys"
         :filter-sx-fy="filterSxFy"
@@ -96,6 +97,7 @@
         @timelineContextAction="handleTimelineContextAction"
         @timelineContextMenuOpened="closeMessageBlockContextMenu"
         @jump="jumpToLine"
+        @flash-message-block="flashMessageBlockByLine"
         @exportLogs="exportMatchedLogs"
         @exportCommandSet="exportMatchedCommandSet"
       />
@@ -268,8 +270,10 @@ const rangeStartBlock = ref<LogMessageBlock | null>(null)
 const rangeEndBlock = ref<LogMessageBlock | null>(null)
 
 const viewRef = shallowRef<EditorView>()
+const timelinePanelRef = ref<InstanceType<typeof TimelinePanel> | null>(null)
 let hoveredMessageBlockKey = ''
 let logFileDragDepth = 0
+let flashBlockTimer: number | undefined
 
 const countLines = (text: string) => {
   if (!text) return 0
@@ -737,6 +741,60 @@ const updateRangeMarkHighlights = () => {
   })
 }
 
+const getFlashBlockExtension = (block: LogMessageBlock | null, doc: Text) => {
+  if (!block) {
+    return Decoration.none
+  }
+
+  const builder: Array<Range<Decoration>> = []
+  const startLine = Math.max(1, block.startLine)
+  const endLine = Math.min(doc.lines, block.endLine)
+  const blockFlash = Decoration.line({ attributes: { class: 'cm-log-flash-block' } })
+
+  for (let lineNumber = startLine; lineNumber <= endLine; lineNumber += 1) {
+    const lineData = doc.line(lineNumber)
+    builder.push(blockFlash.range(lineData.from, lineData.from))
+  }
+
+  return Decoration.set(builder, true)
+}
+
+const clearMessageBlockFlash = () => {
+  if (flashBlockTimer !== undefined) {
+    window.clearTimeout(flashBlockTimer)
+    flashBlockTimer = undefined
+  }
+
+  if (!viewRef.value) {
+    return
+  }
+
+  viewRef.value.dispatch({
+    effects: flashBlockCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
+  })
+}
+
+const triggerMessageBlockFlash = (block: LogMessageBlock | null) => {
+  clearMessageBlockFlash()
+  if (!block || !viewRef.value) {
+    return
+  }
+
+  window.requestAnimationFrame(() => {
+    if (!viewRef.value) {
+      return
+    }
+
+    viewRef.value.dispatch({
+      effects: flashBlockCompartment.reconfigure(EditorView.decorations.of(getFlashBlockExtension(block, viewRef.value.state.doc)))
+    })
+
+    flashBlockTimer = window.setTimeout(() => {
+      clearMessageBlockFlash()
+    }, 1800)
+  })
+}
+
 const updateHoveredMessageBlock = (block: LogMessageBlock | null) => {
   const nextKey = getMessageBlockKey(block)
   if (nextKey === hoveredMessageBlockKey) {
@@ -1033,6 +1091,7 @@ const sendRecordedLogsToGeneralDiffCompare = () => {
 const rebuildLogMessageBlocks = (content: string | null) => {
   logMessageBlocks.value = content ? buildLogMessageBlocks(splitLogLines(content)) : []
   clearRangeMarkers()
+  clearMessageBlockFlash()
   clearHoveredMessageBlock()
 }
 
@@ -1051,6 +1110,26 @@ const handleLogMouseMove = (event: MouseEvent, view: EditorView) => {
 
   updateHoveredMessageBlock(findHoveredMessageBlock(lineNumber))
   return false
+}
+
+const findTimelineItemByBlock = (block: LogMessageBlock) => {
+  return filteredTimelineData.value.find(item => item.line >= block.startLine && item.line <= block.endLine) || null
+}
+
+const handleLogDoubleClick = (event: MouseEvent, view: EditorView) => {
+  const lineNumber = getLineNumberFromMouseEvent(event, view)
+  const block = lineNumber > 0 ? findHoveredMessageBlock(lineNumber) : null
+  if (!block) {
+    return false
+  }
+
+  const item = findTimelineItemByBlock(block)
+  if (!item) {
+    return false
+  }
+
+  timelinePanelRef.value?.centerAndFlashItem(getTimelineItemKey(item))
+  return true
 }
 
 const handleLogContextMenu = (event: MouseEvent, view: EditorView) => {
@@ -1395,14 +1474,27 @@ const syncScrollGeometry = (view: EditorView) => {
 const highlightCompartment = new Compartment()
 const hoverBlockCompartment = new Compartment()
 const rangeMarkCompartment = new Compartment()
+const flashBlockCompartment = new Compartment()
 const baseTheme = EditorView.theme({
   ".cm-scroller": {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important',
     fontSize: '12px'
   },
   ".cm-log-hover-block": {
-    backgroundImage: 'linear-gradient(90deg, rgba(14, 165, 233, 0.18), rgba(14, 165, 233, 0.07)) !important',
+    backgroundColor: 'rgba(14, 165, 233, 0.12) !important',
     boxShadow: 'inset 3px 0 0 #0ea5e9'
+  },
+  ".cm-log-flash-block": {
+    animation: 'log-message-block-flash 0.55s ease-in-out 3'
+  },
+  "@keyframes log-message-block-flash": {
+    "0%, 100%": {
+      backgroundColor: 'rgba(14, 165, 233, 0.10)'
+    },
+    "50%": {
+      backgroundColor: 'rgba(14, 165, 233, 0.34)',
+      boxShadow: 'inset 3px 0 0 #0284c7'
+    }
   },
   ".cm-log-range-start": {
     boxShadow: 'inset 4px 0 0 #10b981'
@@ -1445,6 +1537,7 @@ const extensions = [
   highlightCompartment.of(EditorView.decorations.of(Decoration.none)),
   hoverBlockCompartment.of(EditorView.decorations.of(Decoration.none)),
   rangeMarkCompartment.of(EditorView.decorations.of(Decoration.none)),
+  flashBlockCompartment.of(EditorView.decorations.of(Decoration.none)),
   EditorView.updateListener.of((update) => {
     if (update.geometryChanged || update.docChanged) {
        editorTotalLines.value = update.view.state.doc.lines
@@ -1454,6 +1547,9 @@ const extensions = [
   EditorView.domEventHandlers({
     mousemove(event, view) {
       return handleLogMouseMove(event, view)
+    },
+    dblclick(event, view) {
+      return handleLogDoubleClick(event, view)
     },
     contextmenu(event, view) {
       return handleLogContextMenu(event, view)
@@ -1640,6 +1736,7 @@ onUnmounted(() => {
   document.removeEventListener('click', handleDocumentClick)
   window.removeEventListener('resize', handleWindowResize)
   window.removeEventListener('keydown', handleWindowKeydown)
+  clearMessageBlockFlash()
   restorePagePadding()
 })
 
@@ -1716,6 +1813,7 @@ const clearAllData = () => {
     filterDesc.value = []
     clearRecordedDiffLogs()
     clearRangeMarkers()
+    clearMessageBlockFlash()
     if (fileInput.value) fileInput.value.value = ''
     if (viewRef.value) {
       viewRef.value.dispatch({
@@ -1779,6 +1877,10 @@ const jumpToLine = (lineNumber: number) => {
       })
     }
   }
+}
+
+const flashMessageBlockByLine = (lineNumber: number) => {
+  triggerMessageBlockFlash(findHoveredMessageBlock(lineNumber))
 }
 </script>
 
