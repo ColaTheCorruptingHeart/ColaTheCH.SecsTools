@@ -65,6 +65,20 @@
                 :extensions="targetExtensions"
                 @ready="handleTargetReady"
               />
+              <div
+                v-if="diffOverviewMarks.length"
+                class="diff-overview-bar"
+                aria-label="差异概览"
+                :style="{ bottom: `${diffOverviewBottomOffset}px` }"
+              >
+                <span
+                  v-for="(mark, index) in diffOverviewMarks"
+                  :key="`${mark.kind}-${index}-${mark.top}`"
+                  class="diff-overview-bar__mark"
+                  :class="`diff-overview-bar__mark--${mark.kind}`"
+                  :style="{ top: `${mark.top}%`, height: `${mark.height}%` }"
+                />
+              </div>
             </div>
           </section>
         </div>
@@ -210,6 +224,21 @@ let autoOpenDialogTimer: number | undefined
 const baselineDecorationCompartment = new Compartment()
 const targetDecorationCompartment = new Compartment()
 const VIEWPORT_HIGHLIGHT_OVERSCAN_LINES = 160
+const MAX_DIFF_OVERVIEW_MARKS = 420
+
+type DiffOverviewKind = 'added' | 'missing' | 'changed' | 'ack_error' | 'parse_error'
+
+interface RawDiffOverviewMark {
+  kind: DiffOverviewKind
+  startLine: number
+  lineCount: number
+}
+
+interface DiffOverviewMark {
+  kind: DiffOverviewKind
+  top: number
+  height: number
+}
 
 const selectedRow = computed(() => {
   if (!result.value || !selectedRowId.value) {
@@ -250,6 +279,42 @@ const viewportHighlightEnabled = computed(() => {
   return Boolean(result.value && result.value.stats.diffRows > SECS_LOG_DIFF_LIMITS.maxHighlightRows)
 })
 
+const diffOverviewBottomOffset = ref(0)
+
+const diffOverviewMarks = computed(() => {
+  const rows = result.value?.rows || []
+  const totalLines = rows.reduce((maxLine, row) => Math.max(maxLine, row.targetDisplayEndLine), 0)
+  if (!totalLines) {
+    return []
+  }
+
+  const rawMarks = rows
+    .map(row => {
+      const kind = getDiffOverviewKind(row.kind)
+      if (!kind) {
+        return null
+      }
+
+      return {
+        kind,
+        startLine: Math.max(0, row.targetDisplayStartLine - 1),
+        lineCount: Math.max(1, row.targetDisplayEndLine - row.targetDisplayStartLine + 1)
+      }
+    })
+    .filter((mark): mark is RawDiffOverviewMark => Boolean(mark))
+
+  if (!rawMarks.length) {
+    return []
+  }
+
+  const mergedMarks = mergeDiffOverviewMarks(rawMarks)
+  if (mergedMarks.length > MAX_DIFF_OVERVIEW_MARKS) {
+    return aggregateDiffOverviewMarks(mergedMarks, totalLines)
+  }
+
+  return toDiffOverviewPercentMarks(mergedMarks, totalLines)
+})
+
 const editorTheme = EditorView.theme({
   '&': {
     height: '100%',
@@ -272,47 +337,47 @@ const editorTheme = EditorView.theme({
     color: '#94a3b8'
   },
   '.cm-secs-added': {
-    backgroundColor: 'rgba(16, 185, 129, 0.16) !important',
+    backgroundColor: 'rgba(16, 185, 129, 0.16)',
     boxShadow: 'inset 3px 0 0 #10b981'
   },
   '.cm-secs-missing': {
-    backgroundColor: 'rgba(239, 68, 68, 0.14) !important',
+    backgroundColor: 'rgba(239, 68, 68, 0.14)',
     boxShadow: 'inset 3px 0 0 #ef4444'
   },
   '.cm-secs-changed': {
-    backgroundColor: 'rgba(245, 158, 11, 0.16) !important',
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
     boxShadow: 'inset 3px 0 0 #f59e0b'
   },
   '.cm-secs-ack-error': {
-    backgroundColor: 'rgba(220, 38, 38, 0.18) !important',
+    backgroundColor: 'rgba(220, 38, 38, 0.18)',
     boxShadow: 'inset 3px 0 0 #dc2626'
   },
   '.cm-secs-parse-error': {
-    backgroundColor: 'rgba(139, 92, 246, 0.16) !important',
+    backgroundColor: 'rgba(139, 92, 246, 0.16)',
     boxShadow: 'inset 3px 0 0 #8b5cf6'
   },
   '.cm-secs-hover': {
-    backgroundColor: 'rgba(14, 165, 233, 0.14) !important',
+    backgroundColor: 'rgba(14, 165, 233, 0.14)',
     boxShadow: 'inset 3px 0 0 #0ea5e9'
   },
   '.cm-secs-added.cm-secs-hover': {
-    backgroundColor: 'rgba(16, 185, 129, 0.24) !important',
+    backgroundColor: 'rgba(16, 185, 129, 0.24)',
     boxShadow: 'inset 3px 0 0 #059669'
   },
   '.cm-secs-missing.cm-secs-hover': {
-    backgroundColor: 'rgba(239, 68, 68, 0.22) !important',
+    backgroundColor: 'rgba(239, 68, 68, 0.22)',
     boxShadow: 'inset 3px 0 0 #dc2626'
   },
   '.cm-secs-changed.cm-secs-hover': {
-    backgroundColor: 'rgba(245, 158, 11, 0.25) !important',
+    backgroundColor: 'rgba(245, 158, 11, 0.25)',
     boxShadow: 'inset 3px 0 0 #d97706'
   },
   '.cm-secs-ack-error.cm-secs-hover': {
-    backgroundColor: 'rgba(220, 38, 38, 0.26) !important',
+    backgroundColor: 'rgba(220, 38, 38, 0.26)',
     boxShadow: 'inset 3px 0 0 #b91c1c'
   },
   '.cm-secs-parse-error.cm-secs-hover': {
-    backgroundColor: 'rgba(139, 92, 246, 0.24) !important',
+    backgroundColor: 'rgba(139, 92, 246, 0.24)',
     boxShadow: 'inset 3px 0 0 #7c3aed'
   },
   '.cm-secs-flash': {
@@ -347,8 +412,8 @@ const editorTheme = EditorView.theme({
       backgroundColor: 'rgba(16, 185, 129, 0.14)'
     },
     '50%': {
-      backgroundColor: 'rgba(16, 185, 129, 0.34)',
-      boxShadow: 'inset 3px 0 0 #059669'
+      backgroundColor: 'rgba(14, 165, 233, 0.34)',
+      boxShadow: 'inset 3px 0 0 #0284c7'
     }
   },
   '@keyframes secs-diff-flash-missing': {
@@ -356,8 +421,8 @@ const editorTheme = EditorView.theme({
       backgroundColor: 'rgba(239, 68, 68, 0.12)'
     },
     '50%': {
-      backgroundColor: 'rgba(239, 68, 68, 0.32)',
-      boxShadow: 'inset 3px 0 0 #dc2626'
+      backgroundColor: 'rgba(14, 165, 233, 0.32)',
+      boxShadow: 'inset 3px 0 0 #0284c7'
     }
   },
   '@keyframes secs-diff-flash-changed': {
@@ -365,8 +430,8 @@ const editorTheme = EditorView.theme({
       backgroundColor: 'rgba(245, 158, 11, 0.14)'
     },
     '50%': {
-      backgroundColor: 'rgba(245, 158, 11, 0.34)',
-      boxShadow: 'inset 3px 0 0 #d97706'
+      backgroundColor: 'rgba(14, 165, 233, 0.34)',
+      boxShadow: 'inset 3px 0 0 #0284c7'
     }
   },
   '@keyframes secs-diff-flash-ack-error': {
@@ -374,8 +439,8 @@ const editorTheme = EditorView.theme({
       backgroundColor: 'rgba(220, 38, 38, 0.14)'
     },
     '50%': {
-      backgroundColor: 'rgba(220, 38, 38, 0.36)',
-      boxShadow: 'inset 3px 0 0 #b91c1c'
+      backgroundColor: 'rgba(14, 165, 233, 0.36)',
+      boxShadow: 'inset 3px 0 0 #0284c7'
     }
   },
   '@keyframes secs-diff-flash-parse-error': {
@@ -383,8 +448,8 @@ const editorTheme = EditorView.theme({
       backgroundColor: 'rgba(139, 92, 246, 0.14)'
     },
     '50%': {
-      backgroundColor: 'rgba(139, 92, 246, 0.34)',
-      boxShadow: 'inset 3px 0 0 #7c3aed'
+      backgroundColor: 'rgba(14, 165, 233, 0.34)',
+      boxShadow: 'inset 3px 0 0 #0284c7'
     }
   }
 })
@@ -406,9 +471,6 @@ const baselineExtensions: Extension[] = [
     },
     click(event, view) {
       return handleEditorClick(event, view, 'baseline')
-    },
-    dblclick(event, view) {
-      return handleEditorDoubleClick(event, view, 'baseline')
     },
     contextmenu(event, view) {
       return handleEditorContextMenu(event, view, 'baseline')
@@ -433,9 +495,6 @@ const targetExtensions: Extension[] = [
     },
     click(event, view) {
       return handleEditorClick(event, view, 'target')
-    },
-    dblclick(event, view) {
-      return handleEditorDoubleClick(event, view, 'target')
     },
     contextmenu(event, view) {
       return handleEditorContextMenu(event, view, 'target')
@@ -473,6 +532,109 @@ function getRowClasses(row: SecsDiffRenderRow, side: 'baseline' | 'target') {
   }
 
   return classes.join(' ')
+}
+
+function getDiffOverviewKind(kind: SecsLogDiffKind): DiffOverviewKind | null {
+  if (kind === 'equal') {
+    return null
+  }
+
+  if (kind === 'field_changed') {
+    return 'changed'
+  }
+
+  return kind
+}
+
+function getDiffOverviewPriority(kind: DiffOverviewKind) {
+  if (kind === 'ack_error' || kind === 'parse_error') {
+    return 4
+  }
+
+  if (kind === 'changed') {
+    return 3
+  }
+
+  return 2
+}
+
+function toDiffOverviewPercentMarks(marks: RawDiffOverviewMark[], totalLines: number): DiffOverviewMark[] {
+  return marks.map(mark => ({
+    kind: mark.kind,
+    top: Math.max(0, Math.min(100, (mark.startLine / totalLines) * 100)),
+    height: Math.max(0.45, Math.min(100, (mark.lineCount / totalLines) * 100))
+  }))
+}
+
+function mergeDiffOverviewMarks(marks: RawDiffOverviewMark[]) {
+  const merged: RawDiffOverviewMark[] = []
+
+  marks.forEach(mark => {
+    if (mark.lineCount <= 0) {
+      return
+    }
+
+    const previous = merged[merged.length - 1]
+    if (previous && previous.kind === mark.kind && mark.startLine <= previous.startLine + previous.lineCount + 1) {
+      previous.lineCount = Math.max(previous.lineCount, mark.startLine + mark.lineCount - previous.startLine)
+      return
+    }
+
+    merged.push({ ...mark })
+  })
+
+  return merged
+}
+
+function aggregateDiffOverviewMarks(marks: RawDiffOverviewMark[], totalLines: number): DiffOverviewMark[] {
+  const buckets: Array<DiffOverviewKind | null> = Array.from({ length: MAX_DIFF_OVERVIEW_MARKS }, () => null)
+
+  marks.forEach(mark => {
+    const startBucket = Math.max(0, Math.floor((mark.startLine / totalLines) * MAX_DIFF_OVERVIEW_MARKS))
+    const endBucket = Math.min(
+      MAX_DIFF_OVERVIEW_MARKS - 1,
+      Math.floor(((mark.startLine + mark.lineCount) / totalLines) * MAX_DIFF_OVERVIEW_MARKS)
+    )
+
+    for (let bucketIndex = startBucket; bucketIndex <= endBucket; bucketIndex += 1) {
+      const current = buckets[bucketIndex]
+      if (!current || getDiffOverviewPriority(mark.kind) >= getDiffOverviewPriority(current)) {
+        buckets[bucketIndex] = mark.kind
+      }
+    }
+  })
+
+  const aggregated: RawDiffOverviewMark[] = []
+  buckets.forEach((kind, bucketIndex) => {
+    if (!kind) {
+      return
+    }
+
+    const startLine = (bucketIndex / MAX_DIFF_OVERVIEW_MARKS) * totalLines
+    const lineCount = totalLines / MAX_DIFF_OVERVIEW_MARKS
+    const previous = aggregated[aggregated.length - 1]
+
+    if (previous && previous.kind === kind) {
+      previous.lineCount += lineCount
+      return
+    }
+
+    aggregated.push({ kind, startLine, lineCount })
+  })
+
+  return toDiffOverviewPercentMarks(aggregated, totalLines)
+}
+
+function syncDiffOverviewGeometry() {
+  const scroller = targetViewRef.value?.scrollDOM
+  if (!scroller) {
+    return
+  }
+
+  const nextOffset = scroller.offsetHeight - scroller.clientHeight
+  if (diffOverviewBottomOffset.value !== nextOffset) {
+    diffOverviewBottomOffset.value = nextOffset
+  }
 }
 
 function getViewportLineRange(view: EditorView) {
@@ -649,12 +811,14 @@ function handleBaselineReady(payload: { view: EditorView }) {
   baselineViewRef.value = payload.view
   attachScrollSync()
   updateHighlights()
+  syncDiffOverviewGeometry()
 }
 
 function handleTargetReady(payload: { view: EditorView }) {
   targetViewRef.value = payload.view
   attachScrollSync()
   updateHighlights()
+  syncDiffOverviewGeometry()
 }
 
 function scrollViewToLine(view: EditorView | undefined, lineNumber: number) {
@@ -760,16 +924,6 @@ function handleEditorClick(event: MouseEvent, view: EditorView, side: 'baseline'
   }
 
   selectRowFromEditor(row.id)
-  return true
-}
-
-function handleEditorDoubleClick(event: MouseEvent, view: EditorView, side: 'baseline' | 'target') {
-  const row = getRowFromEditorMouseEvent(event, view, side)
-  if (!row || row.kind === 'equal') {
-    return false
-  }
-
-  openRowDetail(row.id)
   return true
 }
 
@@ -967,6 +1121,7 @@ function handleDocumentClick() {
 
 function handleWindowResize() {
   closeBlockContextMenu()
+  syncDiffOverviewGeometry()
 }
 
 function handleWindowKeydown(event: KeyboardEvent) {
@@ -1079,6 +1234,7 @@ async function runAnalyze() {
     inputDialogVisible.value = false
     await nextTick()
     updateHighlights()
+    syncDiffOverviewGeometry()
     if (selectedRowId.value) {
       const row = response.result.rows.find(item => item.id === selectedRowId.value)
       if (row) {
@@ -1334,9 +1490,48 @@ onUnmounted(() => {
 }
 
 .editor-wrap {
+  position: relative;
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.diff-overview-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 14px;
+  pointer-events: none;
+}
+
+.diff-overview-bar__mark {
+  position: absolute;
+  right: 2px;
+  width: 10px;
+  min-height: 3px;
+  border-radius: 1px;
+  opacity: 0.56;
+}
+
+.diff-overview-bar__mark--added {
+  background: #10b981;
+}
+
+.diff-overview-bar__mark--missing {
+  background: #ef4444;
+}
+
+.diff-overview-bar__mark--changed {
+  background: #f59e0b;
+}
+
+.diff-overview-bar__mark--ack_error {
+  background: #dc2626;
+}
+
+.diff-overview-bar__mark--parse_error {
+  background: #8b5cf6;
 }
 
 .statusbar {
