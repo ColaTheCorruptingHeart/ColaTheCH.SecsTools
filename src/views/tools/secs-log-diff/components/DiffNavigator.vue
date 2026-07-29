@@ -3,7 +3,6 @@
     <header class="diff-nav__header">
       <div>
         <h2>差异导航</h2>
-        <p>{{ visibleRows.length }} / {{ diffRows.length }} 项</p>
       </div>
       <el-select :model-value="filter" size="small" class="diff-nav__filter" @update:model-value="emit('update:filter', $event)">
         <el-option label="全部" value="all" />
@@ -11,8 +10,6 @@
         <el-option label="缺失" value="missing" />
         <el-option label="字段变化" value="field_changed" />
         <el-option label="ACK 异常" value="ack_error" />
-        <el-option label="回复缺失" value="unmatched_reply" />
-        <el-option label="时序变化" value="timing_changed" />
         <el-option label="原文变化" value="changed" />
         <el-option label="解析失败" value="parse_error" />
       </el-select>
@@ -43,7 +40,7 @@
             <span class="diff-nav__tag">{{ getKindLabel(virtualItem.row.kind) }}</span>
             <span class="diff-nav__title">{{ virtualItem.row.title }}</span>
             <span class="diff-nav__lines">
-              {{ virtualItem.row.timingSummary || virtualItem.row.transactionSummary || virtualItem.row.ackSummary || `L ${virtualItem.row.baselineOriginalLine || '-'} / R ${virtualItem.row.targetOriginalLine || '-'}` }}
+              {{ virtualItem.row.ackSummary || `L ${virtualItem.row.baselineOriginalLine || '-'} / R ${virtualItem.row.targetOriginalLine || '-'}` }}
             </span>
           </button>
         </div>
@@ -126,8 +123,6 @@ function getKindLabel(kind: SecsLogDiffKind) {
     changed: '变化',
     field_changed: '字段',
     ack_error: 'ACK',
-    unmatched_reply: '回复',
-    timing_changed: '时序',
     parse_error: '解析'
   }
   return labels[kind]
@@ -292,14 +287,6 @@ defineExpose({
   animation-name: diff-nav-flash-ack-error;
 }
 
-.diff-nav__item--unmatched_reply.is-flashing {
-  animation-name: diff-nav-flash-unmatched-reply;
-}
-
-.diff-nav__item--timing_changed.is-flashing {
-  animation-name: diff-nav-flash-timing-changed;
-}
-
 .diff-nav__item--parse_error.is-flashing {
   animation-name: diff-nav-flash-parse-error;
 }
@@ -359,28 +346,6 @@ defineExpose({
   }
 }
 
-@keyframes diff-nav-flash-unmatched-reply {
-  0%,
-  100% {
-    background: #f5f3ff;
-  }
-
-  50% {
-    background: #ddd6fe;
-  }
-}
-
-@keyframes diff-nav-flash-timing-changed {
-  0%,
-  100% {
-    background: #f0f9ff;
-  }
-
-  50% {
-    background: #bae6fd;
-  }
-}
-
 @keyframes diff-nav-flash-parse-error {
   0%,
   100% {
@@ -420,18 +385,6 @@ defineExpose({
   border-left-color: #dc2626;
   --diff-nav-tag-bg: rgba(220, 38, 38, 0.12);
   --diff-nav-tag-fg: #991b1b;
-}
-
-.diff-nav__item--unmatched_reply {
-  border-left-color: #7c3aed;
-  --diff-nav-tag-bg: rgba(124, 58, 237, 0.12);
-  --diff-nav-tag-fg: #6d28d9;
-}
-
-.diff-nav__item--timing_changed {
-  border-left-color: #0ea5e9;
-  --diff-nav-tag-bg: rgba(14, 165, 233, 0.12);
-  --diff-nav-tag-fg: #0369a1;
 }
 
 .diff-nav__item--parse_error {

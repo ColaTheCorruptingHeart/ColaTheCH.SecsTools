@@ -96,6 +96,12 @@ function addPathAttributes(attributes: Record<string, string>, roots: SecsSmlNod
   })
 }
 
+function addKeyPathAttributes(attributes: Record<string, string>, roots: SecsSmlNode[], rule: MessageDiffRule) {
+  rule.keyPaths.forEach(pathRule => {
+    addPathAttribute(attributes, roots, rule, pathRule, true)
+  })
+}
+
 function buildKey(message: SecsLogMessage, rule: MessageDiffRule, attributes: Record<string, string>) {
   if (rule.mode === 'presence') {
     return message.sf
@@ -275,7 +281,7 @@ export function buildSemanticEvent(message: SecsLogMessage, profile: SecsLogDiff
     fieldPaths: []
   }
 
-  if (activeRule.mode === 'presence' || activeRule.mode === 'key-only') {
+  if (activeRule.mode === 'presence' || (activeRule.mode === 'key-only' && activeRule.keyPaths.length === 0)) {
     return {
       id: `event-${message.id}`,
       messageId: message.id,
@@ -291,6 +297,43 @@ export function buildSemanticEvent(message: SecsLogMessage, profile: SecsLogDiff
       ruleId: activeRule.id,
       ruleSeverity: activeRule.severity,
       diffMode: activeRule.mode
+    }
+  }
+
+  if (activeRule.mode === 'key-only') {
+    try {
+      const parsed = parseSmlTree(message.rawText)
+      const attributes: Record<string, string> = {}
+      addKeyPathAttributes(attributes, parsed.roots, activeRule)
+
+      for (const pathRule of activeRule.keyPaths) {
+        if (pathRule.required && !attributes[pathRule.label]) {
+          return createParseErrorEvent(message, `Missing required key ${pathRule.label}`, activeRule)
+        }
+      }
+
+      const cleanedAttributes = Object.fromEntries(
+        Object.entries(attributes).map(([key, value]) => [key, cleanSecsValue(value)])
+      )
+
+      return {
+        id: `event-${message.id}`,
+        messageId: message.id,
+        index: message.index,
+        sf: message.sf,
+        time: message.time,
+        timeMs: message.timeMs,
+        type: getEventType(message, activeRule),
+        key: buildKey(message, activeRule, cleanedAttributes),
+        summary: makeSummary(message, activeRule, cleanedAttributes),
+        attributes: cleanedAttributes,
+        rawText: message.rawText,
+        ruleId: activeRule.id,
+        ruleSeverity: activeRule.severity,
+        diffMode: activeRule.mode
+      }
+    } catch (error: unknown) {
+      return createParseErrorEvent(message, error instanceof Error ? error.message : 'SML parse failed', activeRule)
     }
   }
 

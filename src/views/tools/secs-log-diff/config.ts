@@ -9,6 +9,5 @@
 
 export const DEFAULT_SECS_LOG_DIFF_OPTIONS = {
   matchWindowSize: SECS_LOG_DIFF_LIMITS.matchWindowSize,
-  includeEqualRows: true,
-  semanticLevel: 'key-message'
+  includeEqualRows: true
 } as const

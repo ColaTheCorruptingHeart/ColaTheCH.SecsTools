@@ -6,9 +6,19 @@ export function cleanSecsValue(value: string) {
     .trim()
 }
 
+const parsedPathCache = new Map<string, number[]>()
+const parsedIgnorePathsCache = new WeakMap<string[], number[][]>()
+
 export function parsePath(path: string) {
+  const cached = parsedPathCache.get(path)
+  if (cached) {
+    return cached
+  }
+
   const matches = Array.from(path.matchAll(/\[(\d+)\]/g))
-  return matches.map(match => Number(match[1]))
+  const parsedPath = matches.map(match => Number(match[1]))
+  parsedPathCache.set(path, parsedPath)
+  return parsedPath
 }
 
 function isSamePath(left: number[], right: number[]) {
@@ -21,10 +31,7 @@ function isAncestorPath(ancestor: number[], target: number[]) {
 
 export function isPathIgnored(path: string, ignorePaths: string[] = []) {
   const parsedPath = parsePath(path)
-  return ignorePaths.some(ignorePath => {
-    const parsedIgnorePath = parsePath(ignorePath)
-    return parsedIgnorePath.length > 0 && isAncestorPath(parsedIgnorePath, parsedPath)
-  })
+  return getParsedIgnorePaths(ignorePaths).some(ignorePath => isAncestorPath(ignorePath, parsedPath))
 }
 
 export function readNodeValueAtPath(roots: SecsSmlNode[], path: string) {
@@ -52,11 +59,7 @@ export function readNodeSubtreeAtPath(roots: SecsSmlNode[], path: string, ignore
     return ''
   }
 
-  const parsedIgnoredPaths = ignorePaths
-    .map(ignorePath => parsePath(ignorePath))
-    .filter(ignorePath => ignorePath.length > 0)
-
-  return serializeNode(node, parsedPath, parsedIgnoredPaths, 0).join('\n').trim()
+  return serializeNode(node, parsedPath, getParsedIgnorePaths(ignorePaths), 0).join('\n').trim()
 }
 
 export function getChildrenAtPath(roots: SecsSmlNode[], path: string) {
@@ -66,4 +69,17 @@ export function getChildrenAtPath(roots: SecsSmlNode[], path: string) {
 
 export function getNodeScalarValue(node: SecsSmlNode | undefined) {
   return cleanSecsValue(getNodeValueText(node))
+}
+
+function getParsedIgnorePaths(ignorePaths: string[]) {
+  const cached = parsedIgnorePathsCache.get(ignorePaths)
+  if (cached) {
+    return cached
+  }
+
+  const parsedIgnorePaths = ignorePaths
+    .map(ignorePath => parsePath(ignorePath))
+    .filter(ignorePath => ignorePath.length > 0)
+  parsedIgnorePathsCache.set(ignorePaths, parsedIgnorePaths)
+  return parsedIgnorePaths
 }
