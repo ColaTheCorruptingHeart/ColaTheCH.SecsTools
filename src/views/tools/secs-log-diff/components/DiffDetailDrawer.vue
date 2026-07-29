@@ -40,16 +40,8 @@
             <dd>{{ row.semanticSummary || '-' }}</dd>
           </div>
           <div>
-            <dt>事务</dt>
-            <dd>{{ row.transactionSummary || '-' }}</dd>
-          </div>
-          <div>
             <dt>ACK</dt>
             <dd>{{ row.ackSummary || '-' }}</dd>
-          </div>
-          <div>
-            <dt>时序</dt>
-            <dd>{{ row.timingSummary || '-' }}</dd>
           </div>
         </dl>
       </section>
@@ -98,18 +90,13 @@ const emit = defineEmits<{
 }>()
 
 const kindLabel = computed(() => {
-  if (props.row?.kind === 'timing_changed') {
-    return '时序变化'
-  }
-
-  const labels: Partial<Record<SecsLogDiffKind, string>> = {
+  const labels: Record<SecsLogDiffKind, string> = {
     equal: '一致',
     added: '新增',
     missing: '缺失',
     changed: '变化',
     field_changed: '字段变化',
     ack_error: 'ACK 异常',
-    unmatched_reply: '回复缺失',
     parse_error: '解析失败'
   }
   return props.row ? labels[props.row.kind] || '' : ''
@@ -203,15 +190,9 @@ function formatMessageText(text: string) {
   color: #991b1b;
 }
 
-.detail__kind--unmatched_reply,
 .detail__kind--parse_error {
   background: #ede9fe;
   color: #6d28d9;
-}
-
-.detail__kind--timing_changed {
-  background: #e0f2fe;
-  color: #0369a1;
 }
 
 .detail__severity,

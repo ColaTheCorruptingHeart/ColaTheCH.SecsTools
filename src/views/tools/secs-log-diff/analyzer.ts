@@ -4,7 +4,6 @@ import { diffEventSequences } from './diff'
 import { buildSecsLogMessages } from './parser'
 import { buildRenderResult } from './render'
 import { buildSemanticEvents } from './semantic'
-import { attachTransactions } from './transactions'
 import type { SecsLogDiffOptions } from './types'
 
 function getTextByteSize(text: string) {
@@ -55,10 +54,6 @@ export function analyzeSecsLogDiff(
   const baselineEvents = buildSemanticEvents(baselineMessages, options.profile)
   const targetEvents = buildSemanticEvents(targetMessages, options.profile)
 
-  if (options.semanticLevel === 'transaction') {
-    attachTransactions(baselineEvents)
-    attachTransactions(targetEvents)
-  }
   const diffItems = diffEventSequences(baselineEvents, targetEvents, options)
 
   return buildRenderResult(

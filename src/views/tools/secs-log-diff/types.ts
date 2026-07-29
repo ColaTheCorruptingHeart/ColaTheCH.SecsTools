@@ -6,8 +6,6 @@ export type SecsLogDiffKind =
   | 'changed'
   | 'field_changed'
   | 'ack_error'
-  | 'unmatched_reply'
-  | 'timing_changed'
   | 'parse_error'
 export type SecsLogDiffSeverity = 'critical' | 'major' | 'minor' | 'info'
 export type SecsLogEventType =
@@ -20,7 +18,6 @@ export type SecsLogEventType =
   | 'generic'
   | 'parse_error'
 export type MessageDiffMode = 'ignore' | 'presence' | 'key-only' | 'field' | 'raw'
-export type SecsSemanticLevel = 'basic' | 'key-message' | 'transaction'
 export type DiffPathValueMode = 'value' | 'subtree'
 
 export interface DiffPathRule {
@@ -62,7 +59,6 @@ export interface SecsLogDiffProfile {
 export interface SecsLogDiffOptions {
   matchWindowSize: number
   includeEqualRows: boolean
-  semanticLevel: SecsSemanticLevel
   profile: SecsLogDiffProfile
 }
 
@@ -102,15 +98,6 @@ export interface SecsSemanticEvent {
     ok: boolean
     meaning: string
   }
-  transaction?: {
-    id: string
-    summary: string
-    result: 'ok' | 'ng' | 'missing_reply'
-    ackField?: string
-    ackValue?: string
-    latencyMs?: number
-    timingSummary?: string
-  }
 }
 
 export interface SecsFieldDiff {
@@ -129,9 +116,7 @@ export interface SecsDiffItem {
   detail: string
   fieldDiffs: SecsFieldDiff[]
   semanticSummary?: string
-  transactionSummary?: string
   ackSummary?: string
-  timingSummary?: string
 }
 
 export interface SecsDiffRenderRow {
@@ -154,9 +139,7 @@ export interface SecsDiffRenderRow {
   targetKey?: string
   fieldDiffs: SecsFieldDiff[]
   semanticSummary?: string
-  transactionSummary?: string
   ackSummary?: string
-  timingSummary?: string
 }
 
 export interface SecsLogDiffStats {
@@ -171,8 +154,6 @@ export interface SecsLogDiffStats {
   changed: number
   fieldChanged: number
   ackError: number
-  unmatchedReply: number
-  timingChanged: number
   parseError: number
 }
 

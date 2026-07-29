@@ -54,8 +54,6 @@ function getDiffStats(
     changed: rows.filter(row => row.kind === 'changed').length,
     fieldChanged: rows.filter(row => row.kind === 'field_changed').length,
     ackError: rows.filter(row => row.kind === 'ack_error').length,
-    unmatchedReply: rows.filter(row => row.kind === 'unmatched_reply').length,
-    timingChanged: rows.filter(row => row.kind === 'timing_changed').length,
     parseError: rows.filter(row => row.kind === 'parse_error').length
   }
 }
@@ -100,9 +98,7 @@ export function buildRenderResult(
       targetKey: item.targetEvent?.key,
       fieldDiffs: item.fieldDiffs,
       semanticSummary: item.semanticSummary,
-      transactionSummary: item.transactionSummary,
-      ackSummary: item.ackSummary,
-      timingSummary: item.timingSummary
+      ackSummary: item.ackSummary
     })
 
     baselineTextParts.push(rowText.baselineText)

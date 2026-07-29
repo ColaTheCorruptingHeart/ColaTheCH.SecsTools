@@ -62,17 +62,8 @@ function getDiffSeverity(
     return baselineSeverity === 'critical' || targetSeverity === 'critical' ? 'critical' : 'major'
   }
 
-  if (kind === 'added' || kind === 'missing' || kind === 'parse_error' || kind === 'unmatched_reply') {
+  if (kind === 'added' || kind === 'missing' || kind === 'parse_error') {
     return 'major'
-  }
-
-  if (kind === 'timing_changed') {
-    const baselineLatency = baselineEvent?.transaction?.latencyMs
-    const targetLatency = targetEvent?.transaction?.latencyMs
-    if (baselineLatency !== undefined && targetLatency !== undefined && Math.abs(targetLatency - baselineLatency) >= 5000) {
-      return 'major'
-    }
-    return 'minor'
   }
 
   if (kind === 'changed' || kind === 'field_changed') {
@@ -100,8 +91,6 @@ function createDiffItem(
     changed: `${baselineLabel || event?.sf || '消息'} 原文变化`,
     field_changed: `${baselineLabel || event?.sf || '消息'} 字段变化`,
     ack_error: `${baselineLabel || targetLabel || event?.sf || '消息'} ACK 异常`,
-    unmatched_reply: `${baselineLabel || targetLabel || event?.sf || '消息'} 回复缺失`,
-    timing_changed: `${baselineLabel || targetLabel || event?.sf || '消息'} 时序变化`,
     parse_error: `${baselineLabel || targetLabel || event?.sf || '消息'} 解析失败`
   }
 
@@ -112,8 +101,6 @@ function createDiffItem(
     changed: '两侧消息已匹配，但原文内容发生变化。',
     field_changed: '两侧消息已匹配，但配置的比较字段发生变化。',
     ack_error: getAckSummary(baselineEvent) || getAckSummary(targetEvent) || 'ACK 值不属于成功值。',
-    unmatched_reply: baselineEvent?.transaction?.summary || targetEvent?.transaction?.summary || '请求没有匹配到回复消息。',
-    timing_changed: getTimingDiffSummary(baselineEvent, targetEvent),
     parse_error: baselineEvent?.parseError || targetEvent?.parseError || '消息解析失败。'
   }
 
@@ -127,50 +114,8 @@ function createDiffItem(
     detail: detailByKind[kind],
     fieldDiffs,
     semanticSummary: baselineEvent?.summary || targetEvent?.summary,
-    transactionSummary: baselineEvent?.transaction?.summary || targetEvent?.transaction?.summary,
-    ackSummary: getAckSummary(baselineEvent) || getAckSummary(targetEvent),
-    timingSummary: getTimingDiffSummary(baselineEvent, targetEvent)
+    ackSummary: getAckSummary(baselineEvent) || getAckSummary(targetEvent)
   }
-}
-
-function formatLatency(latencyMs: number) {
-  if (latencyMs >= 1000) {
-    return `${(latencyMs / 1000).toFixed(3)}s`
-  }
-
-  return `${latencyMs}ms`
-}
-
-function getTimingDiffSummary(baseline: SecsSemanticEvent | undefined, target: SecsSemanticEvent | undefined) {
-  const baselineLatency = baseline?.transaction?.latencyMs
-  const targetLatency = target?.transaction?.latencyMs
-  if (baselineLatency === undefined && targetLatency === undefined) {
-    return baseline?.transaction?.timingSummary || target?.transaction?.timingSummary || ''
-  }
-
-  if (baselineLatency === undefined) {
-    return `baseline 缺少时序信息，target ${formatLatency(targetLatency ?? 0)}`
-  }
-
-  if (targetLatency === undefined) {
-    return `baseline ${formatLatency(baselineLatency)}，target 缺少时序信息`
-  }
-
-  const delta = targetLatency - baselineLatency
-  const sign = delta >= 0 ? '+' : '-'
-  return `baseline ${formatLatency(baselineLatency)}，target ${formatLatency(targetLatency)}，差值 ${sign}${formatLatency(Math.abs(delta))}`
-}
-
-function hasTimingChange(baseline: SecsSemanticEvent, target: SecsSemanticEvent) {
-  const baselineLatency = baseline.transaction?.latencyMs
-  const targetLatency = target.transaction?.latencyMs
-  if (baselineLatency === undefined || targetLatency === undefined) {
-    return false
-  }
-
-  const delta = Math.abs(targetLatency - baselineLatency)
-  const base = Math.max(1, baselineLatency)
-  return delta >= 1000 && delta / base >= 0.2
 }
 
 function classifyMatchedItem(baseline: SecsSemanticEvent, target: SecsSemanticEvent, score: number) {
@@ -182,10 +127,6 @@ function classifyMatchedItem(baseline: SecsSemanticEvent, target: SecsSemanticEv
     return 'ack_error'
   }
 
-  if (baseline.transaction?.result === 'missing_reply' || target.transaction?.result === 'missing_reply') {
-    return 'unmatched_reply'
-  }
-
   if (score < 100) {
     return 'changed'
   }
@@ -193,10 +134,6 @@ function classifyMatchedItem(baseline: SecsSemanticEvent, target: SecsSemanticEv
   const shouldCompareFields = baseline.diffMode === 'field' || target.diffMode === 'field'
   if (shouldCompareFields && diffEventAttributes(baseline, target).length > 0) {
     return 'field_changed'
-  }
-
-  if (hasTimingChange(baseline, target)) {
-    return 'timing_changed'
   }
 
   const shouldCompareRaw = baseline.diffMode === 'raw' || target.diffMode === 'raw'
@@ -208,7 +145,7 @@ function classifyMatchedItem(baseline: SecsSemanticEvent, target: SecsSemanticEv
 }
 
 function getMatchedFieldDiffs(kind: SecsLogDiffKind, baselineEvent: SecsSemanticEvent, targetEvent: SecsSemanticEvent) {
-  if (kind === 'field_changed' || kind === 'ack_error' || kind === 'changed' || kind === 'timing_changed') {
+  if (kind === 'field_changed' || kind === 'ack_error' || kind === 'changed') {
     return diffEventAttributes(baselineEvent, targetEvent)
   }
 

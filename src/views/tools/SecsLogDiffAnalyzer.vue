@@ -8,7 +8,6 @@
       <div class="topbar__actions">
         <el-tag effect="plain">{{ activeProfile.name }}</el-tag>
         <el-tag v-if="viewportHighlightEnabled" type="warning" effect="plain">视口高亮</el-tag>
-        <el-tag type="success" effect="plain">关键消息</el-tag>
         <el-button size="small" plain @click="ruleDialogVisible = true">规则配置</el-button>
         <el-button size="small" plain @click="exportProfile">导出规则</el-button>
         <el-button size="small" plain @click="inputDialogVisible = true">导入/输入日志</el-button>
@@ -78,8 +77,6 @@
           <span>变化 {{ result.stats.changed.toLocaleString() }}</span>
           <span>字段 {{ result.stats.fieldChanged.toLocaleString() }}</span>
           <span>ACK {{ result.stats.ackError.toLocaleString() }}</span>
-          <span>回复缺失 {{ result.stats.unmatchedReply.toLocaleString() }}</span>
-          <span>时序 {{ result.stats.timingChanged.toLocaleString() }}</span>
         </footer>
       </main>
     </div>
@@ -87,7 +84,7 @@
     <div v-else class="empty-state">
       <div>
         <h2>导入两份 SECS/SML 作业日志</h2>
-        <p>当前固定使用关键消息模式，按消息块进行语义对齐，识别 S2F41 RCMD 与 S6F11 CEID。</p>
+        <p>  </p>
         <el-button type="primary" @click="inputDialogVisible = true">开始分析</el-button>
       </div>
     </div>
@@ -290,14 +287,6 @@ const editorTheme = EditorView.theme({
     backgroundColor: 'rgba(220, 38, 38, 0.18) !important',
     boxShadow: 'inset 3px 0 0 #dc2626'
   },
-  '.cm-secs-unmatched-reply': {
-    backgroundColor: 'rgba(124, 58, 237, 0.16) !important',
-    boxShadow: 'inset 3px 0 0 #7c3aed'
-  },
-  '.cm-secs-timing-changed': {
-    backgroundColor: 'rgba(14, 165, 233, 0.14) !important',
-    boxShadow: 'inset 3px 0 0 #0ea5e9'
-  },
   '.cm-secs-parse-error': {
     backgroundColor: 'rgba(139, 92, 246, 0.16) !important',
     boxShadow: 'inset 3px 0 0 #8b5cf6'
@@ -322,14 +311,6 @@ const editorTheme = EditorView.theme({
     backgroundColor: 'rgba(220, 38, 38, 0.26) !important',
     boxShadow: 'inset 3px 0 0 #b91c1c'
   },
-  '.cm-secs-unmatched-reply.cm-secs-hover': {
-    backgroundColor: 'rgba(124, 58, 237, 0.24) !important',
-    boxShadow: 'inset 3px 0 0 #6d28d9'
-  },
-  '.cm-secs-timing-changed.cm-secs-hover': {
-    backgroundColor: 'rgba(14, 165, 233, 0.22) !important',
-    boxShadow: 'inset 3px 0 0 #0284c7'
-  },
   '.cm-secs-parse-error.cm-secs-hover': {
     backgroundColor: 'rgba(139, 92, 246, 0.24) !important',
     boxShadow: 'inset 3px 0 0 #7c3aed'
@@ -348,12 +329,6 @@ const editorTheme = EditorView.theme({
   },
   '.cm-secs-ack-error.cm-secs-flash': {
     animation: 'secs-diff-flash-ack-error 0.55s ease-in-out 3'
-  },
-  '.cm-secs-unmatched-reply.cm-secs-flash': {
-    animation: 'secs-diff-flash-unmatched-reply 0.55s ease-in-out 3'
-  },
-  '.cm-secs-timing-changed.cm-secs-flash': {
-    animation: 'secs-diff-flash-timing-changed 0.55s ease-in-out 3'
   },
   '.cm-secs-parse-error.cm-secs-flash': {
     animation: 'secs-diff-flash-parse-error 0.55s ease-in-out 3'
@@ -401,24 +376,6 @@ const editorTheme = EditorView.theme({
     '50%': {
       backgroundColor: 'rgba(220, 38, 38, 0.36)',
       boxShadow: 'inset 3px 0 0 #b91c1c'
-    }
-  },
-  '@keyframes secs-diff-flash-unmatched-reply': {
-    '0%, 100%': {
-      backgroundColor: 'rgba(124, 58, 237, 0.14)'
-    },
-    '50%': {
-      backgroundColor: 'rgba(124, 58, 237, 0.34)',
-      boxShadow: 'inset 3px 0 0 #6d28d9'
-    }
-  },
-  '@keyframes secs-diff-flash-timing-changed': {
-    '0%, 100%': {
-      backgroundColor: 'rgba(14, 165, 233, 0.12)'
-    },
-    '50%': {
-      backgroundColor: 'rgba(14, 165, 233, 0.32)',
-      boxShadow: 'inset 3px 0 0 #0284c7'
     }
   },
   '@keyframes secs-diff-flash-parse-error': {
@@ -503,10 +460,6 @@ function getRowClasses(row: SecsDiffRenderRow, side: 'baseline' | 'target') {
     classes.push('cm-secs-changed')
   } else if (row.kind === 'ack_error') {
     classes.push('cm-secs-ack-error')
-  } else if (row.kind === 'unmatched_reply') {
-    classes.push('cm-secs-unmatched-reply')
-  } else if (row.kind === 'timing_changed') {
-    classes.push('cm-secs-timing-changed')
   } else if (row.kind === 'parse_error') {
     classes.push('cm-secs-parse-error')
   }
@@ -1111,7 +1064,6 @@ async function runAnalyze() {
       options: {
         matchWindowSize: SECS_LOG_DIFF_LIMITS.matchWindowSize,
         includeEqualRows: includeEqualRows.value,
-        semanticLevel: 'key-message',
         profile: cloneProfileForWorker()
       }
     })
