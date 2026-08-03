@@ -33,6 +33,7 @@
 
       <LogViewerPanel
         :log-content="logContent"
+        :log-file-name="logFileName"
         :extensions="extensions"
         :marker-items="renderedMarkerItems"
         :bottom-offset="scrollInfo.bottomOffset"
@@ -66,6 +67,8 @@
             class="log-range-export-button"
             type="primary"
             circle
+            :loading="rangeExportHashing"
+            :disabled="rangeExportHashing"
             title="导出标记区间"
             aria-label="导出标记区间"
             @click="exportMarkedRangeLogs"
@@ -164,6 +167,17 @@
       :predefine-colors="predefineColors"
       @save="saveSxFyRule"
     />
+
+    <RangeExportDialog
+      v-model="rangeExportDialogVisible"
+      :machine-options="rangeExportMachineOptions"
+      :initial-machine-id="rangeExportInitialMachineId"
+      :start-line="rangeExportStartLine"
+      :end-line="rangeExportEndLine"
+      :log-date="logDate"
+      :content-hash="rangeExportContentHash"
+      @confirm="confirmRangeExport"
+    />
   </div>
 </template>
 
@@ -178,12 +192,20 @@ import JSZip from 'jszip'
 import { LOG_TIMELINE_LIMITS } from './log-timeline/config'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
+import {
+  buildRangeExportFileName,
+  createRangeExportContentHash,
+  extractDateFromFileName,
+  loadRangeExportMachineSettings,
+  saveRangeExportMachineSettings
+} from './log-timeline/rangeExport'
 import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
 import { formatSecsSml } from './secsSml'
 import { discardLogDiffTransferPayload, storeLogDiffTransferPayload } from './logDiffTransfer'
 import { discardSecsSmlTransferText, storeSecsSmlTransferText } from './secsSmlTransfer'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
+import RangeExportDialog from './log-timeline/components/RangeExportDialog.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
 import SxFyRuleDialog from './log-timeline/components/SxFyRuleDialog.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
@@ -242,6 +264,9 @@ const predefineColors = ref([
 ])
 
 const logContent = ref<string | null>(null)
+const logFileName = ref('')
+const logDate = ref('')
+const defaultDocumentTitle = document.title
 const timelineData = ref<TimelineItem[]>([])
 const logMessageBlocks = ref<LogMessageBlock[]>([])
 const editorTotalLines = ref(1)
@@ -268,6 +293,26 @@ const messageBlockContextMenu = ref<{
 })
 const rangeStartBlock = ref<LogMessageBlock | null>(null)
 const rangeEndBlock = ref<LogMessageBlock | null>(null)
+const savedRangeExportMachineSettings = loadRangeExportMachineSettings()
+const rangeExportDialogVisible = ref(false)
+const rangeExportMachineOptions = ref(savedRangeExportMachineSettings.machineIds)
+const rangeExportInitialMachineId = ref(savedRangeExportMachineSettings.lastMachineId)
+const rangeExportStartLine = ref(0)
+const rangeExportEndLine = ref(0)
+const rangeExportContent = ref('')
+const rangeExportContentHash = ref('')
+const rangeExportHashing = ref(false)
+let rangeExportHashRequestVersion = 0
+
+const resetRangeExportState = () => {
+  rangeExportHashRequestVersion += 1
+  rangeExportDialogVisible.value = false
+  rangeExportStartLine.value = 0
+  rangeExportEndLine.value = 0
+  rangeExportContent.value = ''
+  rangeExportContentHash.value = ''
+  rangeExportHashing.value = false
+}
 
 const viewRef = shallowRef<EditorView>()
 const timelinePanelRef = ref<InstanceType<typeof TimelinePanel> | null>(null)
@@ -294,6 +339,11 @@ const sortFilesByName = (files: File[]) => {
     if (left.name > right.name) return 1
     return 0
   })
+}
+
+const removeFileExtension = (fileName: string) => {
+  const extensionIndex = fileName.lastIndexOf('.')
+  return extensionIndex > 0 ? fileName.slice(0, extensionIndex) : fileName
 }
 
 const mergeLogTexts = (texts: string[]) => {
@@ -337,7 +387,9 @@ const readAndMergeLogFiles = async (files: File[]) => {
 
   return {
     mergedText: mergeLogTexts(texts),
-    fileCount: sortedFiles.length
+    fileCount: sortedFiles.length,
+    firstFileName: removeFileExtension(sortedFiles[0]?.name ?? ''),
+    firstFileDate: extractDateFromFileName(sortedFiles[0]?.name ?? '') ?? ''
   }
 }
 
@@ -1173,6 +1225,10 @@ const handleWindowKeydown = (event: KeyboardEvent) => {
 
 watch(logContent, rebuildLogMessageBlocks)
 
+watch(logFileName, (fileName) => {
+  document.title = fileName ? `${fileName} - ${defaultDocumentTitle}` : defaultDocumentTitle
+})
+
 watch([filterSxFy, filterDesc], ([newSxFy], [oldSxFy]) => {
   if (newSxFy !== oldSxFy) {
     if (newSxFy) {
@@ -1349,32 +1405,85 @@ const downloadTextFile = (content: string, fileName: string) => {
   downloadBlobFile(new Blob([content], { type: 'text/plain;charset=utf-8' }), fileName)
 }
 
-const getTimestampText = () => {
-  const now = new Date()
-  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
-}
+const exportMarkedRangeLogs = async () => {
+  if (rangeExportHashing.value) {
+    return
+  }
 
-const exportMarkedRangeLogs = () => {
-  if (!logContent.value || !rangeStartBlock.value || !rangeEndBlock.value) {
+  const currentLogContent = logContent.value
+  const currentStartBlock = rangeStartBlock.value
+  const currentEndBlock = rangeEndBlock.value
+
+  if (!currentLogContent || !currentStartBlock || !currentEndBlock) {
     ElMessage.warning('请先标记区间起始点和区间结束点')
     return
   }
 
-  if (rangeStartBlock.value.startLine > rangeEndBlock.value.endLine) {
+  if (currentStartBlock.startLine > currentEndBlock.endLine) {
     ElMessage.warning('区间起始点不能晚于区间结束点')
     return
   }
 
-  const lines = splitLogLines(logContent.value)
-  const exportLines = lines.slice(rangeStartBlock.value.startLine - 1, rangeEndBlock.value.endLine)
+  if (!logDate.value) {
+    ElMessage.warning('无法从首个日志文件名中提取日志日期，请检查文件名')
+    return
+  }
+
+  const lines = splitLogLines(currentLogContent)
+  const exportLines = lines.slice(currentStartBlock.startLine - 1, currentEndBlock.endLine)
   if (!exportLines.length) {
     ElMessage.warning('标记区间没有可导出的日志')
     return
   }
 
-  const timestamp = getTimestampText()
-  downloadTextFile(`${exportLines.join('\n')}\n`, `timeline-marked-range-${timestamp}.log`)
-  ElMessage.success(`已导出第 ${rangeStartBlock.value.startLine.toLocaleString()} 行至第 ${rangeEndBlock.value.endLine.toLocaleString()} 行`)
+  const exportContent = `${exportLines.join('\n')}\n`
+  const hashRequestVersion = ++rangeExportHashRequestVersion
+  rangeExportHashing.value = true
+
+  try {
+    const contentHash = await createRangeExportContentHash(exportContent)
+    if (hashRequestVersion !== rangeExportHashRequestVersion) {
+      return
+    }
+
+    rangeExportStartLine.value = currentStartBlock.startLine
+    rangeExportEndLine.value = currentEndBlock.endLine
+    rangeExportContent.value = exportContent
+    rangeExportContentHash.value = contentHash
+    rangeExportDialogVisible.value = true
+  } catch (error: unknown) {
+    if (hashRequestVersion === rangeExportHashRequestVersion) {
+      ElMessage.error(`生成内容哈希失败: ${getErrorMessage(error)}`)
+    }
+  } finally {
+    if (hashRequestVersion === rangeExportHashRequestVersion) {
+      rangeExportHashing.value = false
+    }
+  }
+}
+
+const confirmRangeExport = ({ machineId, batchId }: { machineId: string, batchId: string }) => {
+  if (!rangeExportContent.value || !logDate.value || !rangeExportContentHash.value) {
+    ElMessage.warning('导出信息已失效，请重新选择导出区间')
+    rangeExportDialogVisible.value = false
+    return
+  }
+
+  const fileName = buildRangeExportFileName({
+    machineId,
+    batchId,
+    startLine: rangeExportStartLine.value,
+    endLine: rangeExportEndLine.value,
+    logDate: logDate.value,
+    contentHash: rangeExportContentHash.value
+  })
+  const savedSettings = saveRangeExportMachineSettings(machineId, rangeExportMachineOptions.value)
+  rangeExportMachineOptions.value = savedSettings.machineIds
+  rangeExportInitialMachineId.value = savedSettings.lastMachineId
+
+  downloadTextFile(rangeExportContent.value, fileName)
+  rangeExportDialogVisible.value = false
+  ElMessage.success(`已导出第 ${rangeExportStartLine.value.toLocaleString()} 行至第 ${rangeExportEndLine.value.toLocaleString()} 行`)
 }
 
 const getExportCandidateTimelineItems = () => {
@@ -1594,6 +1703,9 @@ const resetDragImportState = () => {
 const resetLogImportState = () => {
   parseRequestVersion += 1
   logContent.value = null
+  logFileName.value = ''
+  logDate.value = ''
+  resetRangeExportState()
   timelineData.value = []
   selectedTimelineItemKeys.value = []
   lastSelectedTimelineItemKey.value = null
@@ -1622,8 +1734,10 @@ const importLogFiles = (files: File[]) => {
   // Allow the loading UI to render before reading and parsing large files.
   setTimeout(async () => {
     try {
-      const { mergedText, fileCount } = await readAndMergeLogFiles(files)
+      const { mergedText, fileCount, firstFileName, firstFileDate } = await readAndMergeLogFiles(files)
       logContent.value = mergedText
+      logFileName.value = firstFileName
+      logDate.value = firstFileDate
 
       if (fileCount > 1) {
         ElMessage.success(`已按文件名顺序加载并拼接 ${fileCount} 个日志文件`)
@@ -1733,6 +1847,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.title = defaultDocumentTitle
   document.removeEventListener('click', handleDocumentClick)
   window.removeEventListener('resize', handleWindowResize)
   window.removeEventListener('keydown', handleWindowKeydown)
@@ -1805,6 +1920,9 @@ const clearAllData = () => {
       { id: 'default-s7f20', s: 7, f: 20, keyPos: '', color: '#8b5cf6', enabled: true, desc: 'RecipeList' }
     ]
     logContent.value = null
+    logFileName.value = ''
+    logDate.value = ''
+    resetRangeExportState()
     timelineData.value = []
     selectedTimelineItemKeys.value = []
     lastSelectedTimelineItemKey.value = null

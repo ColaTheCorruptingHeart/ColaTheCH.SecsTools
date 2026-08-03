@@ -1,7 +1,12 @@
 ﻿<template>
   <div class="flex-1 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden min-h-75 lg:min-h-0">
     <div class="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center justify-between gap-3">
-      <div class="font-medium text-sm text-slate-600 dark:text-slate-300">日志内容</div>
+      <div class="flex min-w-0 items-center gap-2 text-sm">
+        <span class="shrink-0 font-medium text-slate-600 dark:text-slate-300">日志内容</span>
+        <span v-if="logFileName" class="truncate text-xs text-slate-400 dark:text-slate-500" :title="logFileName">
+          {{ logFileName }}
+        </span>
+      </div>
       <slot name="header-actions"></slot>
     </div>
     <div class="flex-1 overflow-hidden relative group">
@@ -51,6 +56,7 @@ import type { TimelineItem } from '../types'
 
 const props = defineProps<{
   logContent: string | null
+  logFileName: string
   extensions: Extension[]
   markerItems: TimelineItem[]
   bottomOffset: number
