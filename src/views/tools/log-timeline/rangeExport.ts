@@ -11,7 +11,6 @@ type DatePattern = {
 
 export type RangeExportMachineSettings = {
   machineIds: string[]
-  lastMachineId: string
 }
 
 export type RangeExportFileNameParams = {
@@ -131,7 +130,7 @@ export const loadRangeExportMachineSettings = (): RangeExportMachineSettings => 
   try {
     const rawSettings = globalThis.localStorage?.getItem(MACHINE_SETTINGS_STORAGE_KEY)
     if (!rawSettings) {
-      return { machineIds: [], lastMachineId: '' }
+      return { machineIds: [] }
     }
 
     const parsedSettings = JSON.parse(rawSettings) as Partial<RangeExportMachineSettings>
@@ -140,23 +139,17 @@ export const loadRangeExportMachineSettings = (): RangeExportMachineSettings => 
       : []
 
     return {
-      machineIds: Array.from(new Set(machineIds.map(value => value.trim()))).slice(0, MAX_MACHINE_OPTION_COUNT),
-      lastMachineId: typeof parsedSettings.lastMachineId === 'string' ? parsedSettings.lastMachineId.trim() : ''
+      machineIds: Array.from(new Set(machineIds.map(value => value.trim()))).slice(0, MAX_MACHINE_OPTION_COUNT)
     }
   } catch (error) {
     console.error('Failed to load range export machine settings', error)
-    return { machineIds: [], lastMachineId: '' }
+    return { machineIds: [] }
   }
 }
 
-export const saveRangeExportMachineSettings = (machineId: string, currentMachineIds: string[]) => {
-  const normalizedMachineId = machineId.trim()
-  const machineIds = normalizedMachineId
-    ? [normalizedMachineId, ...currentMachineIds.filter(value => value !== normalizedMachineId)]
-    : [...currentMachineIds]
+const persistRangeExportMachineSettings = (machineIds: string[]) => {
   const settings: RangeExportMachineSettings = {
-    machineIds: machineIds.slice(0, MAX_MACHINE_OPTION_COUNT),
-    lastMachineId: normalizedMachineId
+    machineIds: machineIds.slice(0, MAX_MACHINE_OPTION_COUNT)
   }
 
   try {
@@ -166,4 +159,17 @@ export const saveRangeExportMachineSettings = (machineId: string, currentMachine
   }
 
   return settings
+}
+
+export const saveRangeExportMachineSettings = (machineId: string, currentMachineIds: string[]) => {
+  const normalizedMachineId = machineId.trim()
+  const machineIds = normalizedMachineId
+    ? [normalizedMachineId, ...currentMachineIds.filter(value => value !== normalizedMachineId)]
+    : [...currentMachineIds]
+
+  return persistRangeExportMachineSettings(machineIds)
+}
+
+export const deleteRangeExportMachineOption = (machineId: string, currentMachineIds: string[]) => {
+  return persistRangeExportMachineSettings(currentMachineIds.filter(value => value !== machineId))
 }

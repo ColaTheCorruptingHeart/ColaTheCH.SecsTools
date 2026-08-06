@@ -171,11 +171,11 @@
     <RangeExportDialog
       v-model="rangeExportDialogVisible"
       :machine-options="rangeExportMachineOptions"
-      :initial-machine-id="rangeExportInitialMachineId"
       :start-line="rangeExportStartLine"
       :end-line="rangeExportEndLine"
       :log-date="logDate"
       :content-hash="rangeExportContentHash"
+      @deleteMachineOption="removeRangeExportMachineOption"
       @confirm="confirmRangeExport"
     />
   </div>
@@ -195,6 +195,7 @@ import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
 import {
   buildRangeExportFileName,
   createRangeExportContentHash,
+  deleteRangeExportMachineOption,
   extractDateFromFileName,
   loadRangeExportMachineSettings,
   saveRangeExportMachineSettings
@@ -296,7 +297,6 @@ const rangeEndBlock = ref<LogMessageBlock | null>(null)
 const savedRangeExportMachineSettings = loadRangeExportMachineSettings()
 const rangeExportDialogVisible = ref(false)
 const rangeExportMachineOptions = ref(savedRangeExportMachineSettings.machineIds)
-const rangeExportInitialMachineId = ref(savedRangeExportMachineSettings.lastMachineId)
 const rangeExportStartLine = ref(0)
 const rangeExportEndLine = ref(0)
 const rangeExportContent = ref('')
@@ -1479,11 +1479,15 @@ const confirmRangeExport = ({ machineId, batchId }: { machineId: string, batchId
   })
   const savedSettings = saveRangeExportMachineSettings(machineId, rangeExportMachineOptions.value)
   rangeExportMachineOptions.value = savedSettings.machineIds
-  rangeExportInitialMachineId.value = savedSettings.lastMachineId
 
   downloadTextFile(rangeExportContent.value, fileName)
   rangeExportDialogVisible.value = false
   ElMessage.success(`已导出第 ${rangeExportStartLine.value.toLocaleString()} 行至第 ${rangeExportEndLine.value.toLocaleString()} 行`)
+}
+
+const removeRangeExportMachineOption = (machineId: string) => {
+  const savedSettings = deleteRangeExportMachineOption(machineId, rangeExportMachineOptions.value)
+  rangeExportMachineOptions.value = savedSettings.machineIds
 }
 
 const getExportCandidateTimelineItems = () => {

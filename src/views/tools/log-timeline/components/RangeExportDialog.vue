@@ -16,7 +16,21 @@
           default-first-option
           placeholder="可选，可输入新机台号"
         >
-          <el-option v-for="option in machineOptions" :key="option" :label="option" :value="option" />
+          <el-option v-for="option in machineOptions" :key="option" :label="option" :value="option">
+            <div class="flex min-w-0 items-center justify-between gap-2">
+              <span class="truncate">{{ option }}</span>
+              <button
+                type="button"
+                class="flex h-6 w-6 shrink-0 items-center justify-center text-slate-400 transition-colors hover:text-red-500"
+                :title="`删除机台号 ${option}`"
+                :aria-label="`删除机台号 ${option}`"
+                @mousedown.prevent.stop
+                @click.prevent.stop="removeMachineOption(option)"
+              >
+                <el-icon><Delete /></el-icon>
+              </button>
+            </div>
+          </el-option>
         </el-select>
       </el-form-item>
 
@@ -53,12 +67,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Delete } from '@element-plus/icons-vue'
 import { buildRangeExportFileName } from '../rangeExport'
 
 const props = defineProps<{
   modelValue: boolean
   machineOptions: string[]
-  initialMachineId: string
   startLine: number
   endLine: number
   logDate: string
@@ -68,6 +82,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   confirm: [value: { machineId: string, batchId: string }]
+  deleteMachineOption: [machineId: string]
 }>()
 
 const machineId = ref('')
@@ -92,11 +107,19 @@ watch(
   () => props.modelValue,
   (visible) => {
     if (visible) {
-      machineId.value = props.initialMachineId
+      machineId.value = ''
       batchId.value = ''
     }
   }
 )
+
+const removeMachineOption = (option: string) => {
+  if (machineId.value === option) {
+    machineId.value = ''
+  }
+
+  emit('deleteMachineOption', option)
+}
 
 const confirmExport = () => {
   emit('confirm', {
