@@ -10,7 +10,7 @@ interface FormattedLineMeta {
 }
 
 type WorkerResponse =
-  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[] }
+  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[]; diagnostics: string[] }
   | { type: 'error'; message: string }
 
 const workerScope = self as DedicatedWorkerGlobalScope
@@ -28,7 +28,8 @@ workerScope.onmessage = (event: MessageEvent<string>) => {
     const response: WorkerResponse = {
       type: 'success',
       text: result.text,
-      lineMeta
+      lineMeta,
+      diagnostics: (result.diagnostics || []).map(diagnostic => `第 ${diagnostic.line} 行：${diagnostic.message}`)
     }
 
     workerScope.postMessage(response)

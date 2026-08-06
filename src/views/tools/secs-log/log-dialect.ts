@@ -1,10 +1,13 @@
 ﻿import type { SecsLogDialect, SecsLogDialectMatch, SecsLogMessageHeaderMatch } from './types'
 
 const STANDALONE_SF_PATTERN = /^(S\d+F\d+)(?:\s+W)?$/i
-const LEGACY_HEADER_PATTERN = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s+(?:SEND|RECV)\s+((?:S\d+F\d+)(?::S\d+F\d+)*)\b/i
-const LEGACY_TIME_PREFIX_PATTERN = /^(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})/
-const BRACKET_HEADER_PATTERN = /^\[(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})\]\s+(?:SEND|RECV)\s+((?:S\d+F\d+)(?::S\d+F\d+)*)\b/i
-const BRACKET_TIME_PREFIX_PATTERN = /^\[(?:\d{4}-\d{2}-\d{2}\s+)?(\d{2}:\d{2}:\d{2}\.\d{3})\]/
+const LOG_DIRECTION_PATTERN = '(?:SEND|RECV|SENT|RECEIVED|H->E|E->H)'
+const DATE_PREFIX_PATTERN = '(?:\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]+)?'
+const TIME_PATTERN = '(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?)'
+const LEGACY_HEADER_PATTERN = new RegExp(`^${DATE_PREFIX_PATTERN}${TIME_PATTERN}\\s+${LOG_DIRECTION_PATTERN}\\s+((?:S\\d+F\\d+)(?::S\\d+F\\d+)*)\\b`, 'i')
+const LEGACY_TIME_PREFIX_PATTERN = new RegExp(`^${DATE_PREFIX_PATTERN}${TIME_PATTERN}`, 'i')
+const BRACKET_HEADER_PATTERN = new RegExp(`^\\[${DATE_PREFIX_PATTERN}${TIME_PATTERN}\\]\\s+${LOG_DIRECTION_PATTERN}\\s+((?:S\\d+F\\d+)(?::S\\d+F\\d+)*)\\b`, 'i')
+const BRACKET_TIME_PREFIX_PATTERN = new RegExp(`^\\[${DATE_PREFIX_PATTERN}${TIME_PATTERN}\\]`, 'i')
 
 export function normalizeSfName(rawValue: string) {
   const match = rawValue.match(/S\d+F\d+/i)
@@ -24,7 +27,7 @@ function createHeaderMatcher(pattern: RegExp) {
     }
 
     return {
-      time: match[1],
+      time: normalizeTime(match[1]),
       sfName
     }
   }
@@ -33,8 +36,13 @@ function createHeaderMatcher(pattern: RegExp) {
 function createTimePrefixMatcher(pattern: RegExp) {
   return (lineTrim: string) => {
     const match = lineTrim.match(pattern)
-    return match?.[1] || null
+    return match?.[1] ? normalizeTime(match[1]) : null
   }
+}
+
+function normalizeTime(rawTime: string) {
+  const [clock, fraction = ''] = rawTime.split('.')
+  return `${clock}.${fraction.padEnd(3, '0').slice(0, 3)}`
 }
 
 function matchStandaloneSfValue(lineTrim: string) {

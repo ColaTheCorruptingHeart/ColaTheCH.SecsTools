@@ -105,7 +105,7 @@ const columnWeights = {
 } as const
 
 type ExtractWorkerMessage =
-  | { type: 'success'; rows: SvidRow[] }
+  | { type: 'success'; rows: SvidRow[]; warnings?: string[] }
   | { type: 'error'; message: string }
 
 function createTextCell(className: string) {
@@ -173,7 +173,7 @@ function buildColumns(containerWidth: number) {
 }
 
 function runExtractWorker(text: string) {
-  return new Promise<SvidRow[]>((resolve, reject) => {
+  return new Promise<{ rows: SvidRow[]; warnings: string[] }>((resolve, reject) => {
     const worker = new Worker(new URL('./s1f12SvidExtractor.worker.ts', import.meta.url), { type: 'module' })
 
     const cleanup = () => {
@@ -186,7 +186,7 @@ function runExtractWorker(text: string) {
       cleanup()
 
       if (event.data.type === 'success') {
-        resolve(event.data.rows)
+        resolve({ rows: event.data.rows, warnings: event.data.warnings || [] })
         return
       }
 
@@ -221,8 +221,11 @@ async function handleExtract() {
 
   try {
     await nextTick()
-    const extractedRows = await runExtractWorker(sourceText)
-    rows.value = extractedRows
+    const extracted = await runExtractWorker(sourceText)
+    rows.value = extracted.rows
+    if (extracted.warnings.length) {
+      ElMessage.warning(extracted.warnings[0] || '报文存在可恢复的解析警告')
+    }
 
     if (!rows.value.length) {
       ElMessage.warning('未在 [0][i][0..2] 位置提取到有效数据，请确认报文结构')

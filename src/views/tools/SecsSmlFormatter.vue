@@ -80,7 +80,7 @@ interface FormattedLineMeta {
 }
 
 type FormatWorkerMessage =
-  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[] }
+  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[]; diagnostics: string[] }
   | { type: 'error'; message: string }
 
 const sourceTextareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -435,7 +435,7 @@ const formattedTextModel = computed({
 })
 
 function runFormatWorker(text: string) {
-  return new Promise<{ text: string; lineMeta: FormattedLineMeta[] }>((resolve, reject) => {
+  return new Promise<{ text: string; lineMeta: FormattedLineMeta[]; diagnostics: string[] }>((resolve, reject) => {
     const worker = new Worker(new URL('./secsSmlFormatter.worker.ts', import.meta.url), { type: 'module' })
 
     const cleanup = () => {
@@ -448,7 +448,7 @@ function runFormatWorker(text: string) {
       cleanup()
 
       if (event.data.type === 'success') {
-        resolve({ text: event.data.text, lineMeta: event.data.lineMeta })
+        resolve({ text: event.data.text, lineMeta: event.data.lineMeta, diagnostics: event.data.diagnostics })
         return
       }
 
@@ -499,7 +499,12 @@ async function onFormat() {
     formattedLineMeta.value = result.lineMeta
     rebuildPathLineMaps(result.lineMeta)
     rebuildVisibleOutput()
-    ElMessage.success('格式化完成')
+    if (result.diagnostics.length) {
+      const suffix = result.diagnostics.length > 1 ? `，另有 ${result.diagnostics.length - 1} 项` : ''
+      ElMessage.warning(`${result.diagnostics[0]}${suffix}`)
+    } else {
+      ElMessage.success('格式化完成')
+    }
   } catch (error) {
     formattedText.value = ''
     formattedLines.value = []
