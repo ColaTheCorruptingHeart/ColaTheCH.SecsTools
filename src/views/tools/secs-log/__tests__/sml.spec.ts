@@ -119,4 +119,35 @@ describe('SECS SML parser', () => {
     expect(result.text.endsWith('>.')).toBe(true)
     expect(ceidLine).toMatchObject({ clickable: true, path: '[0][1]' })
   })
+
+  it('supports bracket counts, brace labels, long type names, comments and semicolon terminators', () => {
+    const source = `S01F012 W
+<LIST [2] {SV_LIST}
+  // vendor comment
+  <ASCII [4] {NAME} "TEMP">
+  /* another comment */
+  <UINT16[1] 7>
+>;`
+    const parsed = parseSmlTree(source)
+
+    expect(parsed.header).toBe('S1F12 W')
+    expect(parsed.terminal).toBe(';')
+    expect(parsed.diagnostics).toEqual([])
+    expect(parsed.roots[0]).toMatchObject({ typeName: 'LIST', declaredCount: 2, label: 'SV_LIST' })
+    expect(parsed.roots[0]?.children[0]).toMatchObject({ typeName: 'ASCII', declaredCount: 4, label: 'NAME' })
+    expect(formatSecsSml(source).text).toContain('>;')
+  })
+
+  it('preserves a terminal marker for scalar and data-less messages', () => {
+    expect(formatSecsSml(`S1F1 W\n.`).text).toBe(`S1F1 W\n.`)
+    expect(formatSecsSml(`S1F2\n<A 'OK'>;`).text).toBe(`S1F2\n<A 'OK'>;`)
+  })
+
+  it('enforces configurable input, node and nesting limits', () => {
+    expect(parseSmlTree('<A 1>', { maxInputLength: 4 }).diagnostics[0]?.code).toBe('input-size-exceeded')
+    expect(parseSmlTree('<L,2\n<A 1>\n<A 2>\n>.', { maxNodes: 2 }).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: 'node-limit-exceeded', severity: 'error' }))
+    expect(parseSmlTree('<L,1\n<L,1\n<A 1>\n>\n>.', { maxDepth: 1 }).diagnostics)
+      .toContainEqual(expect.objectContaining({ code: 'nesting-depth-exceeded', severity: 'error' }))
+  })
 })

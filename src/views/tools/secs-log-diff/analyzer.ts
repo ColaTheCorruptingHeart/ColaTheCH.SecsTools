@@ -54,6 +54,12 @@ export function analyzeSecsLogDiff(
   const baselineEvents = buildSemanticEvents(baselineMessages, options.profile)
   const targetEvents = buildSemanticEvents(targetMessages, options.profile)
 
+  const smlWarningCount = [...baselineEvents, ...targetEvents]
+    .reduce((count, event) => count + (event.parseWarnings?.length || 0), 0)
+  if (smlWarningCount) {
+    warnings.push(`发现 ${smlWarningCount.toLocaleString()} 项可恢复的 SML 解析警告，差异结果已按恢复后的结构生成`)
+  }
+
   const diffItems = diffEventSequences(baselineEvents, targetEvents, options)
 
   return buildRenderResult(

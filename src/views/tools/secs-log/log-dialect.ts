@@ -1,17 +1,20 @@
 ﻿import type { SecsLogDialect, SecsLogDialectMatch, SecsLogMessageHeaderMatch } from './types'
 
-const STANDALONE_SF_PATTERN = /^(S\d+F\d+)(?:\s+W)?$/i
-const LOG_DIRECTION_PATTERN = '(?:SEND|RECV|SENT|RECEIVED|H->E|E->H)'
-const DATE_PREFIX_PATTERN = '(?:\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]+)?'
-const TIME_PATTERN = '(\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?)'
-const LEGACY_HEADER_PATTERN = new RegExp(`^${DATE_PREFIX_PATTERN}${TIME_PATTERN}\\s+${LOG_DIRECTION_PATTERN}\\s+((?:S\\d+F\\d+)(?::S\\d+F\\d+)*)\\b`, 'i')
+const SF_PATTERN = 'S\\d+\\s*F\\s*\\d+'
+const STANDALONE_SF_PATTERN = new RegExp(`^(${SF_PATTERN})(?:\\s+W)?[.;]?$`, 'i')
+const LOG_DIRECTION_PATTERN = '(?:\\[\\s*)?(?:SEND|RECV|SENT|RECEIVED|TX|RX|H\\s*->\\s*E|E\\s*->\\s*H|HOST\\s*->\\s*EQUIPMENT|EQUIPMENT\\s*->\\s*HOST)(?:\\s*\\])?'
+const DATE_PREFIX_PATTERN = '(?:\\d{4}(?:(?:[-/.]\\d{2}){2}|\\d{4})[ T]+)?'
+const TIME_PATTERN = '(\\d{2}:\\d{2}:\\d{2}(?:[.,]\\d{1,6})?)'
+const META_PATTERN = '(?:\\s+(?:\\[[^\\]]+\\]|\\([^)]*\\)|TRACE|DEBUG|INFO|WARN(?:ING)?|ERROR))*'
+const SF_SEQUENCE_PATTERN = `((?:${SF_PATTERN})(?::${SF_PATTERN})*)`
+const LEGACY_HEADER_PATTERN = new RegExp(`^${DATE_PREFIX_PATTERN}${TIME_PATTERN}${META_PATTERN}\\s+${LOG_DIRECTION_PATTERN}\\s+${SF_SEQUENCE_PATTERN}\\b`, 'i')
 const LEGACY_TIME_PREFIX_PATTERN = new RegExp(`^${DATE_PREFIX_PATTERN}${TIME_PATTERN}`, 'i')
-const BRACKET_HEADER_PATTERN = new RegExp(`^\\[${DATE_PREFIX_PATTERN}${TIME_PATTERN}\\]\\s+${LOG_DIRECTION_PATTERN}\\s+((?:S\\d+F\\d+)(?::S\\d+F\\d+)*)\\b`, 'i')
+const BRACKET_HEADER_PATTERN = new RegExp(`^\\[${DATE_PREFIX_PATTERN}${TIME_PATTERN}\\]${META_PATTERN}\\s+${LOG_DIRECTION_PATTERN}\\s+${SF_SEQUENCE_PATTERN}\\b`, 'i')
 const BRACKET_TIME_PREFIX_PATTERN = new RegExp(`^\\[${DATE_PREFIX_PATTERN}${TIME_PATTERN}\\]`, 'i')
 
 export function normalizeSfName(rawValue: string) {
-  const match = rawValue.match(/S\d+F\d+/i)
-  return match?.[0]?.toUpperCase() || ''
+  const match = rawValue.match(/S(\d+)\s*F\s*(\d+)/i)
+  return match ? `S${Number(match[1])}F${Number(match[2])}` : ''
 }
 
 function createHeaderMatcher(pattern: RegExp) {
@@ -41,13 +44,13 @@ function createTimePrefixMatcher(pattern: RegExp) {
 }
 
 function normalizeTime(rawTime: string) {
-  const [clock, fraction = ''] = rawTime.split('.')
+  const [clock, fraction = ''] = rawTime.replace(',', '.').split('.')
   return `${clock}.${fraction.padEnd(3, '0').slice(0, 3)}`
 }
 
 function matchStandaloneSfValue(lineTrim: string) {
   const match = lineTrim.match(STANDALONE_SF_PATTERN)
-  return match?.[1]?.toUpperCase() || null
+  return match?.[1] ? normalizeSfName(match[1]) : null
 }
 
 export const secsLogDialects: SecsLogDialect[] = [

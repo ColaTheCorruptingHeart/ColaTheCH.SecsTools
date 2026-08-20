@@ -11,6 +11,7 @@ describe('S1F12 SVID extraction', () => {
       { index: 2, svid: '1002', svname: 'Pressure', units: '', remark: '' }
     ])
     expect(result.warnings).toContain('第 2 条 SVID 记录字段不足，已按可用字段提取')
+    expect(result.diagnostics).toEqual([])
   })
 
   it('warns for a non-S1F12 header but still extracts compatible structures', () => {
@@ -24,5 +25,14 @@ describe('S1F12 SVID extraction', () => {
 
     expect(result.rows).toEqual([])
     expect(result.warnings).toContain('未找到 S1F12 的根列表')
+  })
+
+  it('retains structured parser diagnostics for source navigation', () => {
+    const result = extractS1F12Svid(`S1F12\n<L,1\n  <L,2\n    <U4 1>\n  >\n>.`)
+
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: 'declared-count-mismatch', line: 3, severity: 'warning'
+    }))
+    expect(result.warnings[0]).toContain('第 3 行，第 3 列')
   })
 })

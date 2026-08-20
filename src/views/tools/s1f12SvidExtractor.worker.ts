@@ -1,9 +1,10 @@
 ﻿/// <reference lib="webworker" />
 
 import { extractS1F12Svid, type SvidRow } from './s1f12-svid'
+import type { SmlDiagnostic } from './secsSml'
 
 type ExtractMessage =
-  | { type: 'success'; rows: SvidRow[]; warnings?: string[] }
+  | { type: 'success'; rows: SvidRow[]; warnings?: string[]; diagnostics: SmlDiagnostic[] }
   | { type: 'error'; message: string }
 
 const workerScope = self as DedicatedWorkerGlobalScope
@@ -14,7 +15,8 @@ workerScope.onmessage = (event: MessageEvent<string>) => {
     const message: ExtractMessage = {
       type: 'success',
       rows: result.rows,
-      warnings: result.warnings.length ? result.warnings : undefined
+      warnings: result.warnings.length ? result.warnings : undefined,
+      diagnostics: result.diagnostics
     }
 
     workerScope.postMessage(message)

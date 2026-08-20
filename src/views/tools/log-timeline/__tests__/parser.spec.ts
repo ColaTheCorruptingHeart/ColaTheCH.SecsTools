@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyzeLogTimeline } from '../parser'
+import { analyzeLogTimeline, analyzeLogTimelineDetailed } from '../parser'
 import type { RuleItem, SxFyRuleItem } from '../types'
 import {
   MULTI_DIALECT_LOG,
@@ -42,5 +42,21 @@ describe('SECS log timeline analysis', () => {
     ])
 
     expect(result).toEqual([])
+  })
+
+  it('returns message-level SML diagnostics without emitting values from unusable trees', () => {
+    const source = `01:00:00 SEND S6F11
+S6F11
+<L,2
+  <U4 1>`
+    const result = analyzeLogTimelineDetailed(source, ceidRules, sxfyRules)
+
+    expect(result.messageCount).toBe(1)
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      sfName: 'S6F11', code: 'unclosed-list', severity: 'error', line: 3
+    }))
+    expect(result.timeline).toEqual([
+      expect.objectContaining({ sxFy: 'S6F11', type: 'SxFy', line: 1 })
+    ])
   })
 })

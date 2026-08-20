@@ -10,7 +10,10 @@ describe('SECS log dialects', () => {
     ['01:14:32.796 SEND S6F11 W', 'legacy-inline', '01:14:32.796'],
     ['2026/08/06 01:14:32 SENT S2F41', 'legacy-inline', '01:14:32.000'],
     ['[2026-08-06T01:14:32.7] RECEIVED S1F12', 'bracket-timestamp', '01:14:32.700'],
-    ['[2026/08/06 01:14:32.123456] H->E S6F11', 'bracket-timestamp', '01:14:32.123']
+    ['[2026/08/06 01:14:32.123456] H->E S6F11', 'bracket-timestamp', '01:14:32.123'],
+    ['20260806 01:14:32,45 [worker-7] TX S01F012', 'legacy-inline', '01:14:32.450'],
+    ['2026.08.06 01:14:32 INFO [RX] S2 F 41 W', 'legacy-inline', '01:14:32.000'],
+    ['[2026-08-06 01:14:32.9] (thread-2) HOST -> EQUIPMENT S6F11', 'bracket-timestamp', '01:14:32.900']
   ])('recognizes %s', (line, dialectId, time) => {
     const match = matchHeaderLine(line, null)
 
@@ -20,6 +23,7 @@ describe('SECS log dialects', () => {
 
   it('recognizes standalone SxFy with optional W', () => {
     expect(matchStandaloneSfLine('s6f11 w', null)?.value).toBe('S6F11')
+    expect(matchStandaloneSfLine('S006 F 011;', null)?.value).toBe('S6F11')
     expect(matchStandaloneSfLine('S6F11 extra', null)).toBeNull()
   })
 

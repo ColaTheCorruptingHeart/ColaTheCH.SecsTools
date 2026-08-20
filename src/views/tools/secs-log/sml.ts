@@ -8,10 +8,16 @@ export type SmlDiagnosticCode =
   | 'declared-count-mismatch'
   | 'unexpected-text'
   | 'unexpected-close'
+  | 'nesting-depth-exceeded'
+  | 'node-limit-exceeded'
+  | 'input-size-exceeded'
 
 export interface SmlParseOptions {
   mode?: SmlParseMode
   additionalTypes?: readonly string[]
+  maxDepth?: number
+  maxNodes?: number
+  maxInputLength?: number
 }
 
 export interface SmlSourceRange {
@@ -47,7 +53,8 @@ export interface ParsedSecsSmlTree {
   header: string
   roots: SecsSmlNode[]
   hasTerminalDot: boolean
-  diagnostics?: SmlDiagnostic[]
+  terminal?: '.' | ';'
+  diagnostics: SmlDiagnostic[]
 }
 
 export interface FormattedSecsSmlLine {
@@ -60,15 +67,36 @@ export interface FormattedSecsSmlLine {
 export interface FormattedSecsSmlResult {
   lines: FormattedSecsSmlLine[]
   text: string
-  diagnostics?: SmlDiagnostic[]
+  diagnostics: SmlDiagnostic[]
 }
+
+export interface SmlDiagnosticSummary {
+  errors: number
+  warnings: number
+  isUsable: boolean
+}
+
+export const SML_PARSE_LIMITS = Object.freeze({
+  maxDepth: 256,
+  maxNodes: 100_000,
+  maxInputLength: 8 * 1024 * 1024
+})
 
 const STANDARD_DATA_TYPES = new Set([
   'L', 'B', 'BOOLEAN', 'A', 'JIS8',
+  'I', 'U', 'F',
   'I1', 'I2', 'I4', 'I8',
   'U1', 'U2', 'U4', 'U8',
-  'F4', 'F8'
+  'F4', 'F8',
+  'LIST', 'BINARY', 'BOOL', 'ASCII', 'J',
+  'INT8', 'INT16', 'INT32', 'INT64',
+  'UINT8', 'UINT16', 'UINT32', 'UINT64',
+  'FLOAT32', 'FLOAT64'
 ])
+
+function isListType(typeName: string) {
+  return /^(?:L|LIST)$/i.test(typeName)
+}
 
 interface ParserContext {
   input: string
@@ -76,14 +104,34 @@ interface ParserContext {
   diagnostics: SmlDiagnostic[]
   mode: SmlParseMode
   knownTypes: Set<string>
+  maxDepth: number
+  maxNodes: number
+  nodeCount: number
 }
 
 export function extractHeader(input: string) {
-  const sfMatch = input.match(/\bS\d+F\d+\b/i)
+  const sfMatch = input.match(/\bS\s*\d+\s*F\s*\d+\b/i)
   const headerLine = sfMatch ? input.slice(sfMatch.index || 0).split(/\r?\n/, 1)[0] || '' : ''
-  const wMatch = headerLine.match(/(?:^|\s)W(?:\s|$)/i)
-  const sf = sfMatch ? sfMatch[0].toUpperCase() : ''
+  const wMatch = headerLine.match(/\bW\b/i)
+  const sfParts = sfMatch?.[0].match(/S\s*(\d+)\s*F\s*(\d+)/i)
+  const sf = sfParts ? `S${Number(sfParts[1])}F${Number(sfParts[2])}` : ''
   return `${sf}${wMatch ? ' W' : ''}`.trim()
+}
+
+export function summarizeSmlDiagnostics(
+  parsed: Pick<ParsedSecsSmlTree, 'roots' | 'diagnostics'>
+): SmlDiagnosticSummary {
+  let errors = 0
+  let warnings = 0
+  parsed.diagnostics.forEach(diagnostic => {
+    if (diagnostic.severity === 'error') errors += 1
+    else warnings += 1
+  })
+  return { errors, warnings, isUsable: parsed.roots.length > 0 && errors === 0 }
+}
+
+export function formatSmlDiagnostic(diagnostic: SmlDiagnostic) {
+  return `第 ${diagnostic.line} 行，第 ${diagnostic.column} 列：${diagnostic.message}`
 }
 
 function buildLineStarts(input: string) {
@@ -130,13 +178,45 @@ function addDiagnostic(
 
 function normalizeBody(body: string) {
   const cleaned = body.replace(/\s+/g, ' ').trim()
-  const match = cleaned.match(/^([A-Za-z][A-Za-z0-9]*)(?:,(\d+))?(?:\s*\[([^\]]*)\])*\s*(.*)$/)
-  if (!match) return { typeName: cleaned, value: '', declaredCount: undefined, label: undefined }
+  const typeMatch = cleaned.match(/^([A-Za-z][A-Za-z0-9]*)/)
+  if (!typeMatch?.[1]) {
+    return { typeName: cleaned, value: '', declaredCount: undefined, label: undefined }
+  }
+
+  const typeName = typeMatch[1]
+  let remainder = cleaned.slice(typeMatch[0].length).trim()
+  let declaredCount: number | undefined
+  let label: string | undefined
+
+  const commaCount = remainder.match(/^,\s*(\d+)\b/)
+  if (commaCount?.[1]) {
+    declaredCount = Number(commaCount[1])
+    remainder = remainder.slice(commaCount[0].length).trim()
+  }
+
+  while (remainder.startsWith('[') || remainder.startsWith('{')) {
+    const closeChar = remainder[0] === '[' ? ']' : '}'
+    const closeIndex = remainder.indexOf(closeChar, 1)
+    if (closeIndex < 0) break
+    const metadata = remainder.slice(1, closeIndex).trim()
+    if (declaredCount === undefined && /^\d+$/.test(metadata)) declaredCount = Number(metadata)
+    else if (metadata) label = label ? `${label} ${metadata}` : metadata
+    remainder = remainder.slice(closeIndex + 1).trim()
+  }
+
+  if (isListType(typeName) && declaredCount === undefined) {
+    const bareCount = remainder.match(/^(\d+)\b/)
+    if (bareCount?.[1]) {
+      declaredCount = Number(bareCount[1])
+      remainder = remainder.slice(bareCount[0].length).trim()
+    }
+  }
+
   return {
-    typeName: match[1] || cleaned,
-    value: match[4]?.trim() || '',
-    declaredCount: match[2] ? Number(match[2]) : undefined,
-    label: match[3]?.trim() || undefined
+    typeName,
+    value: remainder,
+    declaredCount,
+    label
   }
 }
 
@@ -176,7 +256,7 @@ export function normalizeOpenLine(line: string) {
 
 function readTypeAt(input: string, start: number) {
   if (input[start] !== '<') return null
-  const match = input.slice(start).match(/^<\s*([A-Za-z][A-Za-z0-9]*)(?=[,\s>\[]|$)/)
+  const match = input.slice(start).match(/^<\s*([A-Za-z][A-Za-z0-9]*)(?=[,\s>\[{]|$)/)
   return match?.[1] || null
 }
 
@@ -219,15 +299,39 @@ function findNextStructure(input: string, from: number) {
   return Math.min(nextOpen, nextClose)
 }
 
-function buildNode(context: ParserContext, start: number): { node: SecsSmlNode; next: number } {
+function skipTrivia(input: string, from: number) {
+  let cursor = from
+  while (cursor < input.length) {
+    if (/\s/.test(input[cursor] || '')) {
+      cursor += 1
+      continue
+    }
+    if (input.startsWith('/*', cursor)) {
+      const end = input.indexOf('*/', cursor + 2)
+      cursor = end < 0 ? input.length : end + 2
+      continue
+    }
+    if (input.startsWith('//', cursor) || input.startsWith('--', cursor)) {
+      const end = input.indexOf('\n', cursor + 2)
+      cursor = end < 0 ? input.length : end + 1
+      continue
+    }
+    break
+  }
+  return cursor
+}
+
+function buildNode(context: ParserContext, start: number, depth = 0): { node: SecsSmlNode; next: number } {
   const { input } = context
   const boundary = scanTagBoundary(input, start)
   let openingTagEnd = boundary.tagEnd
   let childStart = boundary.childStart
   const lineBodyEnd = boundary.newlineIndex === -1 ? input.length : boundary.newlineIndex
   const lineBody = input.slice(start + 1, lineBodyEnd)
+  const lineHeader = normalizeBody(lineBody)
   const hasMultilineListHeader = boundary.newlineIndex !== -1
-    && /^\s*L(?:,\d+)?(?:\s*\[[^\]]*\])*\s*$/i.test(lineBody)
+    && isListType(lineHeader.typeName)
+    && !lineHeader.value
   if (hasMultilineListHeader) {
     openingTagEnd = -1
     childStart = boundary.newlineIndex + 1
@@ -236,13 +340,12 @@ function buildNode(context: ParserContext, start: number): { node: SecsSmlNode; 
   const bodyEnd = openingTagEnd !== -1 ? openingTagEnd : (childStart === -1 ? input.length : childStart)
   const parsed = normalizeBody(input.slice(start + 1, bodyEnd))
   const typeName = parsed.typeName || input.slice(start + 1, bodyEnd).trim()
-  if (childStart === -1 && openingTagEnd !== -1 && /^L$/i.test(typeName)) {
-    let next = openingTagEnd + 1
-    while (/\s/.test(input[next] || '')) next += 1
-    if (readTypeAt(input, next)) childStart = next
+  if (childStart === -1 && openingTagEnd !== -1 && isListType(typeName)) {
+    const next = skipTrivia(input, openingTagEnd + 1)
+    if (readTypeAt(input, next) || input[next] === '>') childStart = next
   }
 
-  const isList = /^L$/i.test(typeName) || childStart !== -1
+  const isList = isListType(typeName) || childStart !== -1
   const initialEnd = openingTagEnd === -1 ? input.length : openingTagEnd + 1
   const startPosition = getPosition(context.lineStarts, start)
   const endPosition = getPosition(context.lineStarts, Math.max(start, initialEnd - 1))
@@ -262,6 +365,16 @@ function buildNode(context: ParserContext, start: number): { node: SecsSmlNode; 
     }
   }
 
+  context.nodeCount += 1
+  if (context.nodeCount > context.maxNodes) {
+    addDiagnostic(context, 'node-limit-exceeded', `SML 节点数超过 ${context.maxNodes.toLocaleString()} 个限制`, start, input.length, true)
+    return { node, next: input.length }
+  }
+  if (depth >= context.maxDepth && childStart !== -1) {
+    addDiagnostic(context, 'nesting-depth-exceeded', `SML 嵌套深度超过 ${context.maxDepth} 层限制`, start, bodyEnd, true)
+    return { node, next: input.length }
+  }
+
   if (!context.knownTypes.has(typeName.toUpperCase())) {
     addDiagnostic(context, 'unknown-data-type', `未知数据类型 ${typeName}`, start, bodyEnd)
   }
@@ -273,7 +386,7 @@ function buildNode(context: ParserContext, start: number): { node: SecsSmlNode; 
 
   let cursor = childStart
   while (cursor < input.length) {
-    while (/\s/.test(input[cursor] || '')) cursor += 1
+    cursor = skipTrivia(input, cursor)
     if (input[cursor] === '>') {
       const closePosition = getPosition(context.lineStarts, cursor)
       node.sourceRange = { ...node.sourceRange!, end: cursor + 1, endLine: closePosition.line }
@@ -291,7 +404,7 @@ function buildNode(context: ParserContext, start: number): { node: SecsSmlNode; 
 
     const childType = readTypeAt(input, cursor)
     if (childType) {
-      const child = buildNode(context, cursor)
+      const child = buildNode(context, cursor, depth + 1)
       node.children.push(child.node)
       cursor = child.next
       continue
@@ -319,6 +432,29 @@ function addSkippedRootDiagnostics(context: ParserContext, start: number, end: n
 
 export function parseSmlTree(rawText: string, options: SmlParseOptions = {}): ParsedSecsSmlTree {
   if (!rawText || !rawText.trim()) return { header: '', roots: [], hasTerminalDot: false, diagnostics: [] }
+  const terminal = rawText.match(/([.;])\s*$/)?.[1] as '.' | ';' | undefined
+
+  const maxInputLength = options.maxInputLength ?? SML_PARSE_LIMITS.maxInputLength
+  if (rawText.length > maxInputLength) {
+    const context: ParserContext = {
+      input: rawText,
+      lineStarts: buildLineStarts(rawText),
+      diagnostics: [],
+      mode: options.mode || 'lenient',
+      knownTypes: new Set(STANDARD_DATA_TYPES),
+      maxDepth: options.maxDepth ?? SML_PARSE_LIMITS.maxDepth,
+      maxNodes: options.maxNodes ?? SML_PARSE_LIMITS.maxNodes,
+      nodeCount: 0
+    }
+    addDiagnostic(context, 'input-size-exceeded', `SML 文本超过 ${maxInputLength.toLocaleString()} 字符限制`, maxInputLength, rawText.length, true)
+    return {
+      header: extractHeader(rawText),
+      roots: [],
+      hasTerminalDot: terminal === '.',
+      terminal,
+      diagnostics: context.diagnostics
+    }
+  }
 
   const knownTypes = new Set(STANDARD_DATA_TYPES)
   options.additionalTypes?.forEach(typeName => knownTypes.add(typeName.toUpperCase()))
@@ -327,7 +463,10 @@ export function parseSmlTree(rawText: string, options: SmlParseOptions = {}): Pa
     lineStarts: buildLineStarts(rawText),
     diagnostics: [],
     mode: options.mode || 'lenient',
-    knownTypes
+    knownTypes,
+    maxDepth: options.maxDepth ?? SML_PARSE_LIMITS.maxDepth,
+    maxNodes: options.maxNodes ?? SML_PARSE_LIMITS.maxNodes,
+    nodeCount: 0
   }
   const roots: SecsSmlNode[] = []
   const firstStruct = findNodeStart(rawText, 0, knownTypes)
@@ -336,7 +475,8 @@ export function parseSmlTree(rawText: string, options: SmlParseOptions = {}): Pa
     return {
       header: extractHeader(rawText) || rawText.trim(),
       roots,
-      hasTerminalDot: false,
+      hasTerminalDot: terminal === '.',
+      terminal,
       diagnostics: context.diagnostics
     }
   }
@@ -357,7 +497,8 @@ export function parseSmlTree(rawText: string, options: SmlParseOptions = {}): Pa
   return {
     header: extractHeader(rawText),
     roots,
-    hasTerminalDot: />\s*\./.test(rawText),
+    hasTerminalDot: terminal === '.',
+    terminal,
     diagnostics: context.diagnostics
   }
 }
@@ -370,10 +511,11 @@ export function buildFormattedResult(parsed: ParsedSecsSmlTree) {
   const lines: FormattedSecsSmlLine[] = []
   if (parsed.header) lines.push({ text: parsed.header, clickable: false, path: '' })
 
-  function walk(node: SecsSmlNode, depth: number, path: number[]) {
+  function walk(node: SecsSmlNode, depth: number, path: number[], isLastRoot = false) {
     const openLineIndex = lines.length
+    const isLeaf = !node.children.length && node.text.endsWith('>')
     lines.push({
-      text: `${'    '.repeat(depth)}${node.text}`,
+      text: `${'    '.repeat(depth)}${node.text}${depth === 0 && isLastRoot && isLeaf ? (parsed.terminal || '') : ''}`,
       clickable: true,
       path: pathToString(path),
       jumpToIndex: openLineIndex
@@ -381,7 +523,7 @@ export function buildFormattedResult(parsed: ParsedSecsSmlTree) {
     if (node.children.length || !node.text.endsWith('>')) {
       node.children.forEach((child, index) => walk(child, depth + 1, path.concat(index)))
       lines.push({
-        text: `${'    '.repeat(depth)}>` + (depth === 0 && parsed.hasTerminalDot ? '.' : ''),
+        text: `${'    '.repeat(depth)}>` + (depth === 0 && isLastRoot ? (parsed.terminal || '') : ''),
         clickable: true,
         path: pathToString(path),
         jumpToIndex: openLineIndex
@@ -389,7 +531,10 @@ export function buildFormattedResult(parsed: ParsedSecsSmlTree) {
     }
   }
 
-  parsed.roots.forEach((root, index) => walk(root, 0, [index]))
+  parsed.roots.forEach((root, index) => walk(root, 0, [index], index === parsed.roots.length - 1))
+  if (!parsed.roots.length && parsed.header && parsed.terminal) {
+    lines.push({ text: parsed.terminal, clickable: false, path: '' })
+  }
   return lines
 }
 

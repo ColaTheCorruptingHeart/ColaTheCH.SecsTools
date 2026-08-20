@@ -1,6 +1,7 @@
 ﻿import type { LogMessageBlock } from '../secs-log/types'
 
 export type { LogMessageBlock } from '../secs-log/types'
+import type { SmlDiagnosticCode } from '../secs-log/sml'
 
 export type CeidMatchMode = 'S6F11' | 'S6F3'
 
@@ -29,6 +30,22 @@ export interface TimelineItem {
   desc: string
   line: number
   type?: 'CEID' | 'SxFy'
+}
+
+export interface TimelineParseDiagnostic {
+  blockStartLine: number
+  line: number
+  column: number
+  sfName: string
+  code: SmlDiagnosticCode
+  severity: 'warning' | 'error'
+  message: string
+}
+
+export interface LogTimelineAnalysisResult {
+  timeline: TimelineItem[]
+  diagnostics: TimelineParseDiagnostic[]
+  messageCount: number
 }
 
 export interface ExportedMatchedBlock {

@@ -200,7 +200,14 @@ import {
   loadRangeExportMachineSettings,
   saveRangeExportMachineSettings
 } from './log-timeline/rangeExport'
-import type { CeidMatchMode, LogMessageBlock, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import type {
+  CeidMatchMode,
+  LogMessageBlock,
+  RuleItem,
+  SxFyRuleItem,
+  TimelineItem,
+  TimelineParseDiagnostic
+} from './log-timeline/types'
 import { formatSecsSml } from './secsSml'
 import { discardLogDiffTransferPayload, storeLogDiffTransferPayload } from './logDiffTransfer'
 import { discardSecsSmlTransferText, storeSecsSmlTransferText } from './secsSmlTransfer'
@@ -220,6 +227,8 @@ const jsonFileInput = ref<HTMLInputElement | null>(null)
 type LogTimelineWorkerSuccessMessage = {
   type: 'success'
   timeline: TimelineItem[]
+  diagnostics: TimelineParseDiagnostic[]
+  messageCount: number
 }
 
 type LogTimelineWorkerErrorMessage = {
@@ -1965,6 +1974,12 @@ const applyRulesAndParse = () => {
       }
 
       timelineData.value = response.timeline
+      const errorCount = response.diagnostics.filter(diagnostic => diagnostic.severity === 'error').length
+      if (response.diagnostics.length) {
+        ElMessage.warning(
+          `已分析 ${response.messageCount.toLocaleString()} 条消息，${response.diagnostics.length.toLocaleString()} 项 SML 诊断（${errorCount.toLocaleString()} 项错误）`
+        )
+      }
       selectedTimelineItemKeys.value = []
       lastSelectedTimelineItemKey.value = null
       if (viewRef.value) {

@@ -46,4 +46,18 @@ describe('SECS semantic extraction', () => {
     expect(target?.attributes.Body).not.toBe(baseline?.attributes.Body)
     expect(target?.attributes.Body).toContain('<A "RUNNING">')
   })
+
+  it('turns fatal SML diagnostics into semantic parse errors', () => {
+    const event = buildEvents(`01:00:00 SEND S2F41\nS2F41 W\n<L,1\n  <A 'START'>`)[0]
+
+    expect(event).toMatchObject({ sf: 'S2F41', type: 'parse_error' })
+    expect(event?.parseError).toContain('列表未闭合')
+  })
+
+  it('keeps recoverable diagnostics while extracting semantic values', () => {
+    const event = buildEvents(`01:00:00 SEND S2F41\nS2F41 W\n<L,3\n  <A 'START'>\n  <L,0\n  >\n>.`)[0]
+
+    expect(event).toMatchObject({ sf: 'S2F41', type: 'remote_command' })
+    expect(event?.parseWarnings?.[0]).toContain('列表声明 3 项')
+  })
 })

@@ -1,7 +1,7 @@
 ﻿/// <reference lib="webworker" />
 
-import { analyzeLogTimeline } from './log-timeline/parser'
-import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './log-timeline/types'
+import { analyzeLogTimelineDetailed } from './log-timeline/parser'
+import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem, TimelineParseDiagnostic } from './log-timeline/types'
 
 type WorkerRequest = {
   logContent: string
@@ -14,6 +14,8 @@ type WorkerResponse =
   | {
       type: 'success'
       timeline: TimelineItem[]
+      diagnostics: TimelineParseDiagnostic[]
+      messageCount: number
     }
   | {
       type: 'error'
@@ -24,7 +26,7 @@ const workerScope = self as DedicatedWorkerGlobalScope
 
 workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
   try {
-    const timeline = analyzeLogTimeline(
+    const result = analyzeLogTimelineDetailed(
       event.data.logContent,
       event.data.rulesList,
       event.data.sxfyList,
@@ -33,7 +35,9 @@ workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
 
     const response: WorkerResponse = {
       type: 'success',
-      timeline
+      timeline: result.timeline,
+      diagnostics: result.diagnostics,
+      messageCount: result.messageCount
     }
 
     workerScope.postMessage(response)

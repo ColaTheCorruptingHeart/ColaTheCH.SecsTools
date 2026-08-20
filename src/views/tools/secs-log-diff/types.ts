@@ -91,6 +91,7 @@ export interface SecsSemanticEvent {
   attributes: Record<string, string>
   rawText: string
   parseError?: string
+  parseWarnings?: string[]
   ruleId?: string
   ruleSeverity?: Partial<Record<SecsLogDiffKind, SecsLogDiffSeverity>>
   diffMode: MessageDiffMode

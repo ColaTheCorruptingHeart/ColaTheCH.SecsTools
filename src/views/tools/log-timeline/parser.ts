@@ -10,11 +10,16 @@ import {
   findBlockByLine,
   splitLogLines
 } from '../secs-log/log-message-blocks'
-import { getNodeAtPath, getNodeValueText, parseSmlTree } from '../secs-log/sml'
+import { getNodeAtPath, getNodeValueText, parseSmlTree, summarizeSmlDiagnostics } from '../secs-log/sml'
 
 export { buildLogMessageBlocks, findBlockByLine, splitLogLines }
 
-export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sxfyList: SxFyRuleItem[], ceidMatchMode: CeidMatchMode = 'S6F11') {
+export function analyzeLogTimelineDetailed(
+  logContent: string,
+  rulesList: RuleItem[],
+  sxfyList: SxFyRuleItem[],
+  ceidMatchMode: CeidMatchMode = 'S6F11'
+): import('./types').LogTimelineAnalysisResult {
   const ruleMap = new Map<string, string>()
   rulesList.forEach(rule => {
     if (rule.enabled !== false) {
@@ -39,6 +44,7 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
   })
 
   const timeline: TimelineItem[] = []
+  const diagnostics: import('./types').TimelineParseDiagnostic[] = []
   const lines = splitLogLines(logContent)
   const blocks = buildLogMessageBlocks(lines)
   let preferredDialect: LogDialect | null = null
@@ -78,6 +84,18 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
     })
     if (!activeSxFyRules.length && sfName !== ceidMatchMode) return
     const parsed = parseSmlTree(rawLines.join('\n'))
+    parsed.diagnostics.forEach(diagnostic => {
+      diagnostics.push({
+        blockStartLine: block.startLine,
+        line: block.startLine + diagnostic.line - 1,
+        column: diagnostic.column,
+        sfName,
+        code: diagnostic.code,
+        severity: diagnostic.severity,
+        message: diagnostic.message
+      })
+    })
+    if (!summarizeSmlDiagnostics(parsed).isUsable) return
     const ceidNode = sfName === ceidMatchMode ? getNodeAtPath(parsed.roots, [0, 1]) : undefined
     const ceidValue = getNodeValueText(ceidNode).replace(/^['"]|['"]$/g, '').trim()
     if (ceidValue && ruleMap.has(ceidValue)) {
@@ -93,5 +111,14 @@ export function analyzeLogTimeline(logContent: string, rulesList: RuleItem[], sx
     })
   })
 
-  return timeline
+  return { timeline, diagnostics, messageCount: blocks.length }
+}
+
+export function analyzeLogTimeline(
+  logContent: string,
+  rulesList: RuleItem[],
+  sxfyList: SxFyRuleItem[],
+  ceidMatchMode: CeidMatchMode = 'S6F11'
+) {
+  return analyzeLogTimelineDetailed(logContent, rulesList, sxfyList, ceidMatchMode).timeline
 }
