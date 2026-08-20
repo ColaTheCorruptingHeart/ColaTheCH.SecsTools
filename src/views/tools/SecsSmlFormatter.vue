@@ -3,9 +3,16 @@
 
     <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
-        <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+        <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
           <span class="text-sm font-medium text-slate-600">原始 SECS 日志</span>
           <div class="flex items-center gap-2">
+            <el-segmented
+              v-model="parseMode"
+              :options="parseModeOptions"
+              size="small"
+              :disabled="loading"
+              data-testid="parse-mode"
+            />
             <el-button size="small" type="primary" class="!rounded-md shadow-sm" :loading="loading" :disabled="loading" @click="onFormat">格式化</el-button>
             <el-button size="small" type="danger" plain class="!rounded-md" :disabled="loading" @click="onClear">清空</el-button>
           </div>
@@ -29,8 +36,6 @@
             <span v-if="selectedPath" class="text-xs text-slate-400 font-mono max-w-[200px] truncate" :title="selectedPath">
               {{ '当前位置：' + selectedPath }}
             </span>
-            <!-- <el-button size="small" class="!rounded-md" :disabled="loading || !hasFoldableLines" @click="onCollapseAll">全部收起</el-button>
-            <el-button size="small" class="!rounded-md" :disabled="loading || !hasCollapsedLines" @click="onExpandAll">全部展开</el-button> -->
             <el-button size="small" class="!rounded-md" :disabled="loading || !formattedText" @click="onCopy">复制结果</el-button>
             <div class="flex items-center">
               <el-input
@@ -60,6 +65,62 @@
         </div>
       </div>
     </div>
+
+    <section
+      v-if="diagnostics.length"
+      class="diagnostics-panel shrink-0 overflow-hidden bg-white border border-slate-200 shadow-sm"
+      :class="diagnosticsOpen ? 'diagnostics-panel--open' : 'diagnostics-panel--closed'"
+      aria-labelledby="diagnostics-title"
+      data-testid="diagnostics-panel"
+    >
+      <div class="diagnostics-header">
+        <div class="flex min-w-0 items-center gap-3">
+          <h2 id="diagnostics-title" class="m-0 text-sm font-semibold text-slate-700">解析诊断</h2>
+          <div class="flex items-center gap-2 text-xs">
+            <span v-if="diagnosticCounts.error" class="diagnostic-count diagnostic-count--error">
+              {{ diagnosticCounts.error }} 错误
+            </span>
+            <span v-if="diagnosticCounts.warning" class="diagnostic-count diagnostic-count--warning">
+              {{ diagnosticCounts.warning }} 警告
+            </span>
+          </div>
+        </div>
+        <el-tooltip :content="diagnosticsOpen ? '收起诊断' : '展开诊断'" placement="top">
+          <el-button
+            text
+            circle
+            size="small"
+            :aria-label="diagnosticsOpen ? '收起诊断' : '展开诊断'"
+            @click="diagnosticsOpen = !diagnosticsOpen"
+          >
+            <el-icon><ArrowDown v-if="diagnosticsOpen" /><ArrowUp v-else /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </div>
+
+      <div v-if="diagnosticsOpen" class="diagnostics-list" role="list">
+        <button
+          v-for="(diagnostic, index) in diagnostics"
+          :key="`${diagnostic.code}-${diagnostic.start}-${index}`"
+          type="button"
+          class="diagnostic-row"
+          :class="[
+            `diagnostic-row--${diagnostic.severity}`,
+            { 'diagnostic-row--active': selectedDiagnosticIndex === index }
+          ]"
+          role="listitem"
+          :data-testid="`diagnostic-${index}`"
+          @click="focusDiagnostic(diagnostic, index)"
+        >
+          <el-icon class="diagnostic-icon">
+            <CircleCloseFilled v-if="diagnostic.severity === 'error'" />
+            <WarningFilled v-else />
+          </el-icon>
+          <span class="diagnostic-location">{{ diagnostic.line }}:{{ diagnostic.column }}</span>
+          <span class="diagnostic-message">{{ diagnostic.message }}</span>
+        </button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -68,9 +129,11 @@ import { computed, nextTick, onMounted, ref, shallowRef } from 'vue'
 import { Codemirror } from 'vue-codemirror'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { ArrowDown, ArrowUp, CircleCloseFilled, WarningFilled } from '@element-plus/icons-vue'
 import { Compartment, EditorState } from '@codemirror/state'
 import { Decoration, EditorView, lineNumbers } from '@codemirror/view'
 import { consumeSecsSmlTransferText } from './secsSmlTransfer'
+import type { SmlDiagnostic, SmlParseMode } from './secsSml'
 
 interface FormattedLineMeta {
   clickable: boolean
@@ -80,7 +143,7 @@ interface FormattedLineMeta {
 }
 
 type FormatWorkerMessage =
-  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[]; diagnostics: string[] }
+  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[]; diagnostics: SmlDiagnostic[] }
   | { type: 'error'; message: string }
 
 const sourceTextareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -93,6 +156,14 @@ const visibleLineMeta = ref<VisibleFormattedLineMeta[]>([])
 const selectedPath = ref('')
 const selectedLineIndex = ref(-1)
 const locatePathInput = ref('')
+const parseMode = ref<SmlParseMode>('lenient')
+const parseModeOptions = [
+  { label: '宽松', value: 'lenient' },
+  { label: '严格', value: 'strict' }
+]
+const diagnostics = ref<SmlDiagnostic[]>([])
+const diagnosticsOpen = ref(true)
+const selectedDiagnosticIndex = ref(-1)
 const loading = ref(false)
 const loadingText = '正在格式化 SECS SML，请稍候...'
 const outputViewRef = shallowRef<EditorView | null>(null)
@@ -163,8 +234,13 @@ interface VisibleFormattedLineMeta extends FormattedLineMeta {
   isCollapsed: boolean
 }
 
-const hasFoldableLines = computed(() => foldableLineIndexes.value.size > 0)
-const hasCollapsedLines = computed(() => collapsedPaths.value.size > 0)
+const diagnosticCounts = computed(() => diagnostics.value.reduce(
+  (counts, diagnostic) => {
+    counts[diagnostic.severity] += 1
+    return counts
+  },
+  { error: 0, warning: 0 }
+))
 
 function getSourceText() {
   return sourceTextareaRef.value?.value ?? ''
@@ -434,8 +510,8 @@ const formattedTextModel = computed({
   set: () => {}
 })
 
-function runFormatWorker(text: string) {
-  return new Promise<{ text: string; lineMeta: FormattedLineMeta[]; diagnostics: string[] }>((resolve, reject) => {
+function runFormatWorker(text: string, mode: SmlParseMode) {
+  return new Promise<{ text: string; lineMeta: FormattedLineMeta[]; diagnostics: SmlDiagnostic[] }>((resolve, reject) => {
     const worker = new Worker(new URL('./secsSmlFormatter.worker.ts', import.meta.url), { type: 'module' })
 
     const cleanup = () => {
@@ -460,7 +536,7 @@ function runFormatWorker(text: string) {
       reject(new Error(event.message || '格式化失败，请检查报文内容'))
     }
 
-    worker.postMessage(text)
+    worker.postMessage({ text, mode })
   })
 }
 
@@ -490,18 +566,21 @@ async function onFormat() {
   sourceToVisibleLineMap = new Map<number, number>()
   selectedPath.value = ''
   selectedLineIndex.value = -1
+  diagnostics.value = []
+  selectedDiagnosticIndex.value = -1
 
   try {
     await nextTick()
-    const result = await runFormatWorker(sourceText)
+    const result = await runFormatWorker(sourceText, parseMode.value)
     formattedText.value = result.text
     formattedLines.value = result.text ? result.text.split('\n') : []
     formattedLineMeta.value = result.lineMeta
+    diagnostics.value = result.diagnostics
+    diagnosticsOpen.value = result.diagnostics.length > 0
     rebuildPathLineMaps(result.lineMeta)
     rebuildVisibleOutput()
     if (result.diagnostics.length) {
-      const suffix = result.diagnostics.length > 1 ? `，另有 ${result.diagnostics.length - 1} 项` : ''
-      ElMessage.warning(`${result.diagnostics[0]}${suffix}`)
+      ElMessage.warning(`格式化完成，发现 ${result.diagnostics.length} 项解析诊断`)
     } else {
       ElMessage.success('格式化完成')
     }
@@ -511,6 +590,8 @@ async function onFormat() {
     visibleFormattedText.value = ''
     formattedLineMeta.value = []
     visibleLineMeta.value = []
+    diagnostics.value = []
+    selectedDiagnosticIndex.value = -1
     collapsedPaths.value = new Set()
     foldableLineIndexes.value = new Set()
     sourceToVisibleLineMap = new Map<number, number>()
@@ -558,6 +639,8 @@ function onClear() {
   selectedPath.value = ''
   selectedLineIndex.value = -1
   locatePathInput.value = ''
+  diagnostics.value = []
+  selectedDiagnosticIndex.value = -1
   collapsedPaths.value = new Set()
   preferredPathLineMap = new Map<string, number>()
   fallbackPathLineMap = new Map<string, number>()
@@ -600,28 +683,20 @@ async function onLocateByPath() {
   await focusLine(targetIndex, normalized, `已定位到：${normalized}`, true, true)
 }
 
-async function onCollapseAll() {
-  if (!foldableLineIndexes.value.size) return
+async function focusDiagnostic(diagnostic: SmlDiagnostic, index: number) {
+  const textarea = sourceTextareaRef.value
+  if (!textarea) return
 
-  const nextCollapsedPaths = new Set<string>()
-  foldableLineIndexes.value.forEach(lineIndex => {
-    const path = formattedLineMeta.value[lineIndex]?.path
-    if (path) nextCollapsedPaths.add(path)
-  })
-
-  collapsedPaths.value = nextCollapsedPaths
-  rebuildVisibleOutput()
+  selectedDiagnosticIndex.value = index
+  diagnosticsOpen.value = true
   await nextTick()
-  syncOutputDecorations()
-}
-
-async function onExpandAll() {
-  if (!collapsedPaths.value.size) return
-
-  collapsedPaths.value = new Set()
-  rebuildVisibleOutput()
-  await nextTick()
-  syncOutputDecorations()
+  textarea.focus()
+  textarea.setSelectionRange(
+    Math.min(diagnostic.start, textarea.value.length),
+    Math.min(Math.max(diagnostic.start + 1, diagnostic.end), textarea.value.length)
+  )
+  const lineHeight = Number.parseFloat(window.getComputedStyle(textarea).lineHeight) || 22
+  textarea.scrollTop = Math.max(0, (diagnostic.line - 3) * lineHeight)
 }
 
 async function onCopy() {
@@ -664,5 +739,130 @@ onMounted(() => {
   cursor: not-allowed;
   color: rgb(100 116 139);
   background-color: rgb(248 250 252 / 0.7);
+}
+
+.diagnostics-panel {
+  border-radius: 8px;
+  transition: height 160ms ease;
+}
+
+.diagnostics-panel--open {
+  height: clamp(150px, 22vh, 220px);
+}
+
+.diagnostics-panel--closed {
+  height: 42px;
+}
+
+.diagnostics-header {
+  height: 42px;
+  padding: 0 12px 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgb(226 232 240);
+  background: rgb(248 250 252);
+}
+
+.diagnostic-count {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.diagnostic-count--error {
+  color: rgb(185 28 28);
+  border-color: rgb(254 202 202);
+  background: rgb(254 242 242);
+}
+
+.diagnostic-count--warning {
+  color: rgb(161 98 7);
+  border-color: rgb(253 230 138);
+  background: rgb(255 251 235);
+}
+
+.diagnostics-list {
+  height: calc(100% - 42px);
+  overflow: auto;
+  background: rgb(255 255 255);
+}
+
+.diagnostic-row {
+  width: 100%;
+  min-height: 36px;
+  display: grid;
+  grid-template-columns: 20px 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 11px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-bottom: 1px solid rgb(241 245 249);
+  color: rgb(51 65 85);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diagnostic-row:hover,
+.diagnostic-row:focus-visible,
+.diagnostic-row--active {
+  background: rgb(248 250 252);
+  outline: none;
+}
+
+.diagnostic-row--error {
+  border-left-color: rgb(220 38 38);
+}
+
+.diagnostic-row--warning {
+  border-left-color: rgb(217 119 6);
+}
+
+.diagnostic-row--error .diagnostic-icon {
+  color: rgb(220 38 38);
+}
+
+.diagnostic-row--warning .diagnostic-icon {
+  color: rgb(217 119 6);
+}
+
+.diagnostic-location {
+  color: rgb(100 116 139);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+}
+
+.diagnostic-message {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(51 65 85);
+  font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .diagnostics-panel--open {
+    height: 180px;
+  }
+
+  .diagnostic-row {
+    grid-template-columns: 20px 52px minmax(0, 1fr);
+    padding-right: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagnostics-panel {
+    transition: none;
+  }
 }
 </style>

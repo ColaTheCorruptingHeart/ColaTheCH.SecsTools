@@ -1,3 +1,19 @@
+export type SmlParseMode = 'lenient' | 'strict'
+
+export type SmlDiagnosticCode =
+  | 'no-sml-node'
+  | 'unknown-data-type'
+  | 'missing-node-close'
+  | 'unclosed-list'
+  | 'declared-count-mismatch'
+  | 'unexpected-text'
+  | 'unexpected-close'
+
+export interface SmlParseOptions {
+  mode?: SmlParseMode
+  additionalTypes?: readonly string[]
+}
+
 export interface SmlSourceRange {
   start: number
   end: number
@@ -6,11 +22,13 @@ export interface SmlSourceRange {
 }
 
 export interface SmlDiagnostic {
+  code: SmlDiagnosticCode
   severity: 'warning' | 'error'
   message: string
   start: number
   end: number
   line: number
+  column: number
 }
 
 export interface SecsSmlNode {
@@ -45,22 +63,38 @@ export interface FormattedSecsSmlResult {
   diagnostics?: SmlDiagnostic[]
 }
 
+const STANDARD_DATA_TYPES = new Set([
+  'L', 'B', 'BOOLEAN', 'A', 'JIS8',
+  'I1', 'I2', 'I4', 'I8',
+  'U1', 'U2', 'U4', 'U8',
+  'F4', 'F8'
+])
+
+interface ParserContext {
+  input: string
+  lineStarts: number[]
+  diagnostics: SmlDiagnostic[]
+  mode: SmlParseMode
+  knownTypes: Set<string>
+}
+
 export function extractHeader(input: string) {
   const sfMatch = input.match(/\bS\d+F\d+\b/i)
   const headerLine = sfMatch ? input.slice(sfMatch.index || 0).split(/\r?\n/, 1)[0] || '' : ''
   const wMatch = headerLine.match(/(?:^|\s)W(?:\s|$)/i)
   const sf = sfMatch ? sfMatch[0].toUpperCase() : ''
-  const w = wMatch ? ' W' : ''
-  return `${sf}${w}`.trim()
+  return `${sf}${wMatch ? ' W' : ''}`.trim()
 }
 
 function buildLineStarts(input: string) {
   const starts = [0]
-  for (let i = 0; i < input.length; i += 1) if (input[i] === '\n') starts.push(i + 1)
+  for (let index = 0; index < input.length; index += 1) {
+    if (input[index] === '\n') starts.push(index + 1)
+  }
   return starts
 }
 
-function lineNumberAt(lineStarts: number[], index: number) {
+function getPosition(lineStarts: number[], index: number) {
   let low = 0
   let high = lineStarts.length
   while (low < high) {
@@ -68,10 +102,33 @@ function lineNumberAt(lineStarts: number[], index: number) {
     if ((lineStarts[middle] || 0) <= index) low = middle + 1
     else high = middle
   }
-  return low
+  const lineIndex = Math.max(0, low - 1)
+  return {
+    line: lineIndex + 1,
+    column: index - (lineStarts[lineIndex] || 0) + 1
+  }
 }
 
-function normalizeBody(body: string, keepLength = false) {
+function addDiagnostic(
+  context: ParserContext,
+  code: SmlDiagnosticCode,
+  message: string,
+  start: number,
+  end: number,
+  alwaysError = false
+) {
+  const position = getPosition(context.lineStarts, start)
+  context.diagnostics.push({
+    code,
+    severity: alwaysError || context.mode === 'strict' ? 'error' : 'warning',
+    message,
+    start,
+    end: Math.max(start + 1, end),
+    ...position
+  })
+}
+
+function normalizeBody(body: string) {
   const cleaned = body.replace(/\s+/g, ' ').trim()
   const match = cleaned.match(/^([A-Za-z][A-Za-z0-9]*)(?:,(\d+))?(?:\s*\[([^\]]*)\])*\s*(.*)$/)
   if (!match) return { typeName: cleaned, value: '', declaredCount: undefined, label: undefined }
@@ -79,8 +136,7 @@ function normalizeBody(body: string, keepLength = false) {
     typeName: match[1] || cleaned,
     value: match[4]?.trim() || '',
     declaredCount: match[2] ? Number(match[2]) : undefined,
-    label: match[3]?.trim() || undefined,
-    raw: keepLength ? cleaned : undefined
+    label: match[3]?.trim() || undefined
   }
 }
 
@@ -88,11 +144,11 @@ function splitScalarValues(value: string) {
   const values: string[] = []
   let current = ''
   let quote = ''
-  for (let i = 0; i < value.length; i += 1) {
-    const char = value[i] || ''
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index] || ''
     if (quote) {
       current += char
-      if (char === '\\' && i + 1 < value.length) current += value[++i]
+      if (char === '\\' && index + 1 < value.length) current += value[++index]
       else if (char === quote) quote = ''
       continue
     }
@@ -102,7 +158,9 @@ function splitScalarValues(value: string) {
     } else if (/\s/.test(char)) {
       if (current) values.push(current)
       current = ''
-    } else current += char
+    } else {
+      current += char
+    }
   }
   if (current) values.push(current)
   return values
@@ -113,17 +171,32 @@ export function normalizeOpenLine(line: string) {
   const hasClose = trimmed.endsWith('>')
   const inner = trimmed.slice(1, hasClose ? -1 : undefined).trim()
   const parsed = normalizeBody(inner)
-  const type = parsed.typeName || inner
-  return `<${type}${parsed.value ? ` ${parsed.value}` : ''}${hasClose ? '>' : ''}`
+  return `<${parsed.typeName || inner}${parsed.value ? ` ${parsed.value}` : ''}${hasClose ? '>' : ''}`
+}
+
+function readTypeAt(input: string, start: number) {
+  if (input[start] !== '<') return null
+  const match = input.slice(start).match(/^<\s*([A-Za-z][A-Za-z0-9]*)(?=[,\s>\[]|$)/)
+  return match?.[1] || null
+}
+
+function findNodeStart(input: string, from: number, allowedTypes?: Set<string>) {
+  let cursor = input.indexOf('<', from)
+  while (cursor >= 0) {
+    const typeName = readTypeAt(input, cursor)
+    if (typeName && (!allowedTypes || allowedTypes.has(typeName.toUpperCase()))) return cursor
+    cursor = input.indexOf('<', cursor + 1)
+  }
+  return -1
 }
 
 function scanTagBoundary(input: string, start: number) {
   let quote = ''
   let newlineIndex = -1
-  for (let i = start + 1; i < input.length; i += 1) {
-    const char = input[i] || ''
+  for (let index = start + 1; index < input.length; index += 1) {
+    const char = input[index] || ''
     if (quote) {
-      if (char === '\\') i += 1
+      if (char === '\\') index += 1
       else if (char === quote) quote = ''
       continue
     }
@@ -131,34 +204,50 @@ function scanTagBoundary(input: string, start: number) {
       quote = char
       continue
     }
-    if (char === '\n' && newlineIndex === -1) newlineIndex = i
-    if (char === '<') return { tagEnd: -1, childStart: i, newlineIndex }
-    if (char === '>') return { tagEnd: i, childStart: -1, newlineIndex }
+    if (char === '\n' && newlineIndex === -1) newlineIndex = index
+    if (char === '<') return { tagEnd: -1, childStart: index, newlineIndex }
+    if (char === '>') return { tagEnd: index, childStart: -1, newlineIndex }
   }
   return { tagEnd: -1, childStart: -1, newlineIndex }
 }
 
-function buildNode(input: string, start: number, diagnostics: SmlDiagnostic[], lineStarts: number[]): { node: SecsSmlNode; next: number } {
+function findNextStructure(input: string, from: number) {
+  const nextOpen = input.indexOf('<', from)
+  const nextClose = input.indexOf('>', from)
+  if (nextOpen === -1) return nextClose
+  if (nextClose === -1) return nextOpen
+  return Math.min(nextOpen, nextClose)
+}
+
+function buildNode(context: ParserContext, start: number): { node: SecsSmlNode; next: number } {
+  const { input } = context
   const boundary = scanTagBoundary(input, start)
   let openingTagEnd = boundary.tagEnd
   let childStart = boundary.childStart
-  const listWithoutInlineChildren = boundary.newlineIndex !== -1 && boundary.childStart === -1 && boundary.tagEnd !== -1
-  if (listWithoutInlineChildren && /^L(?:,\d+)?/i.test(input.slice(start + 1, boundary.newlineIndex))) {
+  const lineBodyEnd = boundary.newlineIndex === -1 ? input.length : boundary.newlineIndex
+  const lineBody = input.slice(start + 1, lineBodyEnd)
+  const hasMultilineListHeader = boundary.newlineIndex !== -1
+    && /^\s*L(?:,\d+)?(?:\s*\[[^\]]*\])*\s*$/i.test(lineBody)
+  if (hasMultilineListHeader) {
     openingTagEnd = -1
     childStart = boundary.newlineIndex + 1
   }
+
   const bodyEnd = openingTagEnd !== -1 ? openingTagEnd : (childStart === -1 ? input.length : childStart)
-  const parsed = normalizeBody(input.slice(start + 1, bodyEnd), true)
+  const parsed = normalizeBody(input.slice(start + 1, bodyEnd))
   const typeName = parsed.typeName || input.slice(start + 1, bodyEnd).trim()
   if (childStart === -1 && openingTagEnd !== -1 && /^L$/i.test(typeName)) {
     let next = openingTagEnd + 1
     while (/\s/.test(input[next] || '')) next += 1
-    if (input[next] === '<') childStart = next
+    if (readTypeAt(input, next)) childStart = next
   }
-  const tagEnd = openingTagEnd
-  const isList = childStart !== -1 || /^L$/i.test(typeName)
+
+  const isList = /^L$/i.test(typeName) || childStart !== -1
+  const initialEnd = openingTagEnd === -1 ? input.length : openingTagEnd + 1
+  const startPosition = getPosition(context.lineStarts, start)
+  const endPosition = getPosition(context.lineStarts, Math.max(start, initialEnd - 1))
   const node: SecsSmlNode = {
-    text: `<${typeName}${parsed.value ? ` ${parsed.value}` : ''}${childStart === -1 && tagEnd !== -1 ? '>' : ''}`,
+    text: `<${typeName}${parsed.value ? ` ${parsed.value}` : ''}${childStart === -1 && openingTagEnd !== -1 ? '>' : ''}`,
     children: [],
     kind: isList ? 'list' : 'value',
     typeName,
@@ -167,86 +256,151 @@ function buildNode(input: string, start: number, diagnostics: SmlDiagnostic[], l
     values: parsed.value ? splitScalarValues(parsed.value) : [],
     sourceRange: {
       start,
-      end: tagEnd === -1 ? input.length : tagEnd + 1,
-      startLine: lineNumberAt(lineStarts, start),
-      endLine: lineNumberAt(lineStarts, tagEnd === -1 ? input.length : tagEnd)
+      end: initialEnd,
+      startLine: startPosition.line,
+      endLine: endPosition.line
     }
   }
 
-  if (tagEnd === -1 && childStart === -1) {
-    diagnostics.push({ severity: 'error', message: '未找到节点结束符 >', start, end: input.length, line: lineNumberAt(lineStarts, start) })
+  if (!context.knownTypes.has(typeName.toUpperCase())) {
+    addDiagnostic(context, 'unknown-data-type', `未知数据类型 ${typeName}`, start, bodyEnd)
+  }
+  if (openingTagEnd === -1 && childStart === -1) {
+    addDiagnostic(context, 'missing-node-close', '未找到节点结束符 >', start, input.length, true)
     return { node, next: input.length }
   }
-
-  if (childStart === -1) return { node, next: tagEnd + 1 }
+  if (childStart === -1) return { node, next: openingTagEnd + 1 }
 
   let cursor = childStart
   while (cursor < input.length) {
     while (/\s/.test(input[cursor] || '')) cursor += 1
     if (input[cursor] === '>') {
-      node.sourceRange = { ...node.sourceRange!, end: cursor + 1, endLine: lineNumberAt(lineStarts, cursor) }
+      const closePosition = getPosition(context.lineStarts, cursor)
+      node.sourceRange = { ...node.sourceRange!, end: cursor + 1, endLine: closePosition.line }
       if (node.declaredCount !== undefined && node.declaredCount !== node.children.length) {
-        diagnostics.push({ severity: 'warning', message: `列表声明 ${node.declaredCount} 项，实际解析到 ${node.children.length} 项`, start, end: cursor + 1, line: lineNumberAt(lineStarts, start) })
+        addDiagnostic(
+          context,
+          'declared-count-mismatch',
+          `列表声明 ${node.declaredCount} 项，实际解析到 ${node.children.length} 项`,
+          start,
+          cursor + 1
+        )
       }
       return { node, next: cursor + 1 }
     }
-    if (input[cursor] !== '<') {
-      const nextTag = input.indexOf('<', cursor)
-      const end = nextTag === -1 ? input.length : nextTag
-      if (input.slice(cursor, end).trim()) diagnostics.push({ severity: 'warning', message: '列表中存在未识别文本', start: cursor, end, line: lineNumberAt(lineStarts, cursor) })
-      cursor = end
+
+    const childType = readTypeAt(input, cursor)
+    if (childType) {
+      const child = buildNode(context, cursor)
+      node.children.push(child.node)
+      cursor = child.next
       continue
     }
-    const child = buildNode(input, cursor, diagnostics, lineStarts)
-    node.children.push(child.node)
-    cursor = child.next
+
+    const nextStructure = findNextStructure(input, cursor + 1)
+    const end = nextStructure === -1 ? input.length : nextStructure
+    if (input.slice(cursor, end).trim()) {
+      addDiagnostic(context, 'unexpected-text', '列表中存在未识别文本', cursor, end)
+    }
+    cursor = end
   }
-  diagnostics.push({ severity: 'error', message: '列表未闭合', start, end: input.length, line: lineNumberAt(lineStarts, start) })
+
+  addDiagnostic(context, 'unclosed-list', '列表未闭合', start, input.length, true)
   return { node, next: input.length }
 }
 
-export function parseSmlTree(rawText: string): ParsedSecsSmlTree {
-  if (!rawText || !rawText.trim()) return { header: '', roots: [], hasTerminalDot: false, diagnostics: [] }
-  const diagnostics: SmlDiagnostic[] = []
-  const lineStarts = buildLineStarts(rawText)
-  const roots: SecsSmlNode[] = []
-  let cursor = 0
-  const firstStruct = rawText.search(/</)
-  if (firstStruct < 0) return { header: extractHeader(rawText) || rawText.trim(), roots, hasTerminalDot: false, diagnostics }
-  cursor = firstStruct
-  while (cursor < rawText.length) {
-    const next = rawText.indexOf('<', cursor)
-    if (next < 0) break
-    const parsed = buildNode(rawText, next, diagnostics, lineStarts)
-    roots.push(parsed.node)
-    cursor = parsed.next
+function addSkippedRootDiagnostics(context: ParserContext, start: number, end: number) {
+  const closeOffset = context.input.slice(start, end).indexOf('>')
+  if (closeOffset >= 0) {
+    const position = start + closeOffset
+    addDiagnostic(context, 'unexpected-close', '存在未匹配的列表结束符 >', position, position + 1)
   }
-  const hasTerminalDot = />(?:\s*)\./.test(rawText)
-  return { header: extractHeader(rawText), roots, hasTerminalDot, diagnostics }
 }
 
-export function pathToString(path: number[]) { return path.map(value => `[${value}]`).join('') }
+export function parseSmlTree(rawText: string, options: SmlParseOptions = {}): ParsedSecsSmlTree {
+  if (!rawText || !rawText.trim()) return { header: '', roots: [], hasTerminalDot: false, diagnostics: [] }
+
+  const knownTypes = new Set(STANDARD_DATA_TYPES)
+  options.additionalTypes?.forEach(typeName => knownTypes.add(typeName.toUpperCase()))
+  const context: ParserContext = {
+    input: rawText,
+    lineStarts: buildLineStarts(rawText),
+    diagnostics: [],
+    mode: options.mode || 'lenient',
+    knownTypes
+  }
+  const roots: SecsSmlNode[] = []
+  const firstStruct = findNodeStart(rawText, 0, knownTypes)
+  if (firstStruct < 0) {
+    addDiagnostic(context, 'no-sml-node', '未找到可解析的 SML 数据节点', 0, rawText.length)
+    return {
+      header: extractHeader(rawText) || rawText.trim(),
+      roots,
+      hasTerminalDot: false,
+      diagnostics: context.diagnostics
+    }
+  }
+
+  let cursor = firstStruct
+  while (cursor < rawText.length) {
+    const parsed = buildNode(context, cursor)
+    roots.push(parsed.node)
+    const next = findNodeStart(rawText, parsed.next)
+    if (next < 0) {
+      addSkippedRootDiagnostics(context, parsed.next, rawText.length)
+      break
+    }
+    addSkippedRootDiagnostics(context, parsed.next, next)
+    cursor = next
+  }
+
+  return {
+    header: extractHeader(rawText),
+    roots,
+    hasTerminalDot: />\s*\./.test(rawText),
+    diagnostics: context.diagnostics
+  }
+}
+
+export function pathToString(path: number[]) {
+  return path.map(value => `[${value}]`).join('')
+}
 
 export function buildFormattedResult(parsed: ParsedSecsSmlTree) {
   const lines: FormattedSecsSmlLine[] = []
   if (parsed.header) lines.push({ text: parsed.header, clickable: false, path: '' })
+
   function walk(node: SecsSmlNode, depth: number, path: number[]) {
-    const text = `${'    '.repeat(depth)}${node.text}`
     const openLineIndex = lines.length
-    lines.push({ text, clickable: true, path: pathToString(path), jumpToIndex: openLineIndex })
+    lines.push({
+      text: `${'    '.repeat(depth)}${node.text}`,
+      clickable: true,
+      path: pathToString(path),
+      jumpToIndex: openLineIndex
+    })
     if (node.children.length || !node.text.endsWith('>')) {
       node.children.forEach((child, index) => walk(child, depth + 1, path.concat(index)))
-      lines.push({ text: `${'    '.repeat(depth)}>` + (depth === 0 && parsed.hasTerminalDot ? '.' : ''), clickable: true, path: pathToString(path), jumpToIndex: openLineIndex })
+      lines.push({
+        text: `${'    '.repeat(depth)}>` + (depth === 0 && parsed.hasTerminalDot ? '.' : ''),
+        clickable: true,
+        path: pathToString(path),
+        jumpToIndex: openLineIndex
+      })
     }
   }
+
   parsed.roots.forEach((root, index) => walk(root, 0, [index]))
   return lines
 }
 
-export function formatSecsSml(rawText: string): FormattedSecsSmlResult {
-  const parsed = parseSmlTree(rawText)
+export function formatSecsSml(rawText: string, options: SmlParseOptions = {}): FormattedSecsSmlResult {
+  const parsed = parseSmlTree(rawText, options)
   const lines = buildFormattedResult(parsed)
-  return { lines, text: lines.map(line => line.text).join('\n'), diagnostics: parsed.diagnostics }
+  return {
+    lines,
+    text: lines.map(line => line.text).join('\n'),
+    diagnostics: parsed.diagnostics
+  }
 }
 
 export function getNodeValueText(node: SecsSmlNode | undefined) {
@@ -258,6 +412,8 @@ export function getNodeValueText(node: SecsSmlNode | undefined) {
 
 export function getNodeAtPath(roots: SecsSmlNode[], path: number[]) {
   let current: SecsSmlNode | undefined
-  path.forEach((index, depth) => { current = depth === 0 ? roots[index] : current?.children[index] })
+  path.forEach((index, depth) => {
+    current = depth === 0 ? roots[index] : current?.children[index]
+  })
   return current
 }

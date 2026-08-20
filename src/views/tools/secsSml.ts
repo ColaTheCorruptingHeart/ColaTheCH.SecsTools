@@ -13,5 +13,10 @@ export type {
   FormattedSecsSmlLine,
   FormattedSecsSmlResult,
   ParsedSecsSmlTree,
-  SecsSmlNode
+  SecsSmlNode,
+  SmlDiagnostic,
+  SmlDiagnosticCode,
+  SmlParseMode,
+  SmlParseOptions,
+  SmlSourceRange
 } from './secs-log/sml'

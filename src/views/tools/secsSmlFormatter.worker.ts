@@ -1,6 +1,6 @@
 ﻿/// <reference lib="webworker" />
 
-import { formatSecsSml } from './secsSml'
+import { formatSecsSml, type SmlDiagnostic, type SmlParseMode } from './secsSml'
 
 interface FormattedLineMeta {
   clickable: boolean
@@ -10,14 +10,19 @@ interface FormattedLineMeta {
 }
 
 type WorkerResponse =
-  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[]; diagnostics: string[] }
+  | { type: 'success'; text: string; lineMeta: FormattedLineMeta[]; diagnostics: SmlDiagnostic[] }
   | { type: 'error'; message: string }
+
+interface WorkerRequest {
+  text: string
+  mode: SmlParseMode
+}
 
 const workerScope = self as DedicatedWorkerGlobalScope
 
-workerScope.onmessage = (event: MessageEvent<string>) => {
+workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
   try {
-    const result = formatSecsSml(event.data)
+    const result = formatSecsSml(event.data.text, { mode: event.data.mode })
     const lineMeta = result.lines.map(line => ({
       clickable: line.clickable,
       path: line.path,
@@ -29,7 +34,7 @@ workerScope.onmessage = (event: MessageEvent<string>) => {
       type: 'success',
       text: result.text,
       lineMeta,
-      diagnostics: (result.diagnostics || []).map(diagnostic => `第 ${diagnostic.line} 行：${diagnostic.message}`)
+      diagnostics: result.diagnostics || []
     }
 
     workerScope.postMessage(response)
