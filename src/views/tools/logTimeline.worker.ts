@@ -1,13 +1,14 @@
 ﻿/// <reference lib="webworker" />
 
 import { analyzeLogTimelineDetailed } from './log-timeline/parser'
-import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem, TimelineParseDiagnostic } from './log-timeline/types'
+import type { CeidMatchMode, CeidMatchRule, RuleItem, SxFyRuleItem, TimelineItem, TimelineParseDiagnostic } from './log-timeline/types'
 
 type WorkerRequest = {
   logContent: string
   rulesList: RuleItem[]
   sxfyList: SxFyRuleItem[]
   ceidMatchMode: CeidMatchMode
+  customCeidRule?: CeidMatchRule
 }
 
 type WorkerResponse =
@@ -30,7 +31,8 @@ workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
       event.data.logContent,
       event.data.rulesList,
       event.data.sxfyList,
-      event.data.ceidMatchMode
+      event.data.ceidMatchMode,
+      event.data.customCeidRule
     )
 
     const response: WorkerResponse = {

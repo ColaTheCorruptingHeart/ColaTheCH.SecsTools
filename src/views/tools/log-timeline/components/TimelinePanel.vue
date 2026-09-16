@@ -29,9 +29,17 @@
           :style="{ top: virtualItem.top + 'px', height: ITEM_HEIGHT + 'px' }"
         >
           <div
+            data-testid="timeline-item"
+            :data-range-markers="virtualItem.item.rangeMarkers?.join(',') || undefined"
+            :data-timeline-item-type="virtualItem.item.type || 'CEID'"
             class="h-17 cursor-pointer border-l-[3px] p-2 rounded-r transition-colors group flex flex-col gap-1 hover:bg-slate-50 dark:hover:bg-slate-700/50"
-            :class="{ 'timeline-item--flashing': getItemKey(virtualItem.item) === flashingItemKey }"
-            :style="{ borderLeftColor: getMarkerColor(virtualItem.item.ceid, virtualItem.item.type, virtualItem.item.ruleId) }"
+            :class="{
+              'timeline-item--flashing': getItemKey(virtualItem.item) === flashingItemKey,
+              'timeline-item--range-start': hasRangeMarker(virtualItem.item, 'start'),
+              'timeline-item--range-end': hasRangeMarker(virtualItem.item, 'end'),
+              'timeline-item--range-marker': isRangeMarker(virtualItem.item)
+            }"
+            :style="{ borderLeftColor: getItemMarkerColor(virtualItem.item) }"
             @click="emit('jump', virtualItem.item.line)"
             @dblclick="emit('flashMessageBlock', virtualItem.item.line)"
             @contextmenu.prevent.stop="openTimelineContextMenu(virtualItem.item, $event)"
@@ -40,6 +48,13 @@
               <span class="text-[11px] text-slate-600 font-mono tracking-tight shrink-0">{{ virtualItem.item.time }}</span>
               <div class="flex items-center gap-2 min-w-0">
                 <span
+                  v-for="marker in virtualItem.item.rangeMarkers"
+                  :key="marker"
+                  class="timeline-range-badge"
+                  :class="`timeline-range-badge--${marker}`"
+                >{{ marker === 'start' ? '起点' : '终点' }}</span>
+                <span
+                  v-if="!isRangeMarker(virtualItem.item)"
                   class="text-[10px] px-1.5 py-0.5 rounded font-mono truncate border"
                   :style="{
                     color: getMarkerColor(virtualItem.item.ceid, virtualItem.item.type, virtualItem.item.ruleId),
@@ -48,6 +63,7 @@
                   }"
                 >{{ virtualItem.item.type === 'CEID' ? 'CEID' : 'SxFy' }}: {{ virtualItem.item.ceid }}</span>
                 <el-checkbox
+                  v-if="!isRangeMarker(virtualItem.item)"
                   :model-value="selectedItemKeySet.has(getItemKey(virtualItem.item))"
                   @click.stop="handleItemCheckboxClick(virtualItem.item, $event)"
                   @change="handleItemCheckedChange(virtualItem.item, Boolean($event))"
@@ -56,6 +72,9 @@
             </div>
             <div class="timeline-item-desc text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:opacity-80 leading-tight">
               {{ virtualItem.item.desc }}
+              <span v-if="isRangeMarker(virtualItem.item) && virtualItem.item.sxFy" class="ml-1 font-mono text-xs text-slate-500 dark:text-slate-400">
+                {{ virtualItem.item.sxFy }}
+              </span>
             </div>
           </div>
         </div>
@@ -87,16 +106,16 @@
       @click.stop
       @contextmenu.prevent.stop
     >
-      <button class="timeline-context-menu__item" type="button" :disabled="!items.length" @click="handleContextMenuAction('selectAll')">
+      <button class="timeline-context-menu__item" type="button" :disabled="!selectableItems.length" @click="handleContextMenuAction('selectAll')">
         全选
       </button>
-      <button class="timeline-context-menu__item" type="button" :disabled="!items.length" @click="handleContextMenuAction('clearAll')">
+      <button class="timeline-context-menu__item" type="button" :disabled="!selectableItems.length" @click="handleContextMenuAction('clearAll')">
         取消全选
       </button>
-      <button class="timeline-context-menu__item" type="button" :disabled="!timelineContextMenu.item?.sxFy" @click="handleContextMenuAction('selectSameSxFy')">
+      <button class="timeline-context-menu__item" type="button" :disabled="!isSelectableContextItem || !timelineContextMenu.item?.sxFy" @click="handleContextMenuAction('selectSameSxFy')">
         选择同SxFy
       </button>
-      <button class="timeline-context-menu__item" type="button" :disabled="!timelineContextMenu.item?.ceid" @click="handleContextMenuAction('selectSameCeid')">
+      <button class="timeline-context-menu__item" type="button" :disabled="!isSelectableContextItem || !timelineContextMenu.item?.ceid" @click="handleContextMenuAction('selectSameCeid')">
         选择同CEID
       </button>
     </div>
@@ -106,7 +125,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Download } from '@element-plus/icons-vue'
-import type { TimelineItem } from '../types'
+import type { RangeMarkerKind, TimelineItem } from '../types'
 
 const ITEM_HEIGHT = 76
 const OVERSCAN_COUNT = 6
@@ -121,7 +140,7 @@ const props = defineProps<{
   exportKeepTimeLine: boolean
   exportSelectedOnly: boolean
   canExport: boolean
-  getMarkerColor: (id: string, type?: 'CEID' | 'SxFy', ruleId?: string) => string
+  getMarkerColor: (id: string, type?: TimelineItem['type'], ruleId?: string) => string
   getItemKey: (item: TimelineItem) => string
 }>()
 
@@ -142,6 +161,26 @@ const emit = defineEmits<{
 const selectedItemKeySet = computed(() => {
   return new Set(props.selectedItemKeys)
 })
+
+const selectableItems = computed(() => {
+  return props.items.filter(item => item.type !== 'RangeMarker')
+})
+
+const isSelectableContextItem = computed(() => {
+  return Boolean(timelineContextMenu.value.item && timelineContextMenu.value.item.type !== 'RangeMarker')
+})
+
+const isRangeMarker = (item: TimelineItem) => item.type === 'RangeMarker'
+
+const hasRangeMarker = (item: TimelineItem, marker: RangeMarkerKind) => {
+  return item.rangeMarkers?.includes(marker) ?? false
+}
+
+const getItemMarkerColor = (item: TimelineItem) => {
+  if (hasRangeMarker(item, 'start')) return '#10b981'
+  if (hasRangeMarker(item, 'end')) return '#ef4444'
+  return props.getMarkerColor(item.ceid, item.type, item.ruleId)
+}
 
 const timelineViewportRef = ref<HTMLDivElement | null>(null)
 const viewportHeight = ref(0)
@@ -374,6 +413,68 @@ const exportSelectedOnlyModel = computed({
 
 .timeline-item--flashing {
   animation: timeline-item-flash 0.55s ease-in-out 3;
+}
+
+.timeline-item--range-start {
+  background-color: rgba(16, 185, 129, 0.08);
+}
+
+.timeline-item--range-end {
+  background-color: rgba(239, 68, 68, 0.08);
+}
+
+.timeline-item--range-start.timeline-item--range-end {
+  border-left-color: #10b981 !important;
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.timeline-item--range-marker {
+  cursor: pointer;
+  border-top: 1px dashed #cbd5e1;
+  border-bottom: 1px dashed #cbd5e1;
+}
+
+.timeline-range-badge {
+  flex: none;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.timeline-range-badge--start {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.timeline-range-badge--end {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+:global(.dark) .timeline-item--range-start {
+  background-color: rgba(16, 185, 129, 0.12);
+}
+
+:global(.dark) .timeline-item--range-end {
+  background-color: rgba(239, 68, 68, 0.12);
+}
+
+:global(.dark) .timeline-item--range-marker {
+  border-top-color: #475569;
+  border-bottom-color: #475569;
+}
+
+:global(.dark) .timeline-range-badge--start {
+  color: #6ee7b7;
+  background: rgba(6, 78, 59, 0.55);
+}
+
+:global(.dark) .timeline-range-badge--end {
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.5);
 }
 
 @keyframes timeline-item-flash {

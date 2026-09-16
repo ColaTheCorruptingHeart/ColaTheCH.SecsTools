@@ -10,7 +10,7 @@
     @drop="handlePageDrop"
   >
     <!-- Main Content -->
-    <div class="flex-1 flex flex-col lg:flex-row gap-2 min-h-0">
+    <div class="flex-1 flex flex-col lg:flex-row gap-2 min-h-0 overflow-y-auto lg:overflow-hidden custom-scrollbar">
         <!-- Left: Rules -->
         <RulesPanel
         :ceid-match-mode="ceidMatchMode"
@@ -20,6 +20,7 @@
         :has-log-content="Boolean(logContent)"
         @openCeidImport="importDialogVisible = true"
         @updateCeidMatchMode="updateCeidMatchMode"
+        @openCustomCeid="openCustomCeidDialog"
         @openSxFyAdd="openSxFyDialog()"
         @openSxFyEdit="openSxFyDialog($event)"
         @removeRule="removeRule"
@@ -168,6 +169,8 @@
       @save="saveSxFyRule"
     />
 
+    <CustomCeidDialog v-model="customCeidDialogVisible" :form="customCeidRule" @save="saveCustomCeidRule" />
+
     <RangeExportDialog
       v-model="rangeExportDialogVisible"
       :machine-options="rangeExportMachineOptions"
@@ -192,6 +195,7 @@ import JSZip from 'jszip'
 import { LOG_TIMELINE_LIMITS } from './log-timeline/config'
 import { buildCommandFileBaseName, buildExportedMatchedBlocks, buildUniqueFileName } from './log-timeline/exporters'
 import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
+import { buildRangeMarkerTimeline } from './log-timeline/rangeMarkers'
 import {
   buildRangeExportFileName,
   createRangeExportContentHash,
@@ -202,6 +206,7 @@ import {
 } from './log-timeline/rangeExport'
 import type {
   CeidMatchMode,
+  CeidMatchRule,
   LogMessageBlock,
   RuleItem,
   SxFyRuleItem,
@@ -212,6 +217,7 @@ import { formatSecsSml } from './secsSml'
 import { discardLogDiffTransferPayload, storeLogDiffTransferPayload } from './logDiffTransfer'
 import { discardSecsSmlTransferText, storeSecsSmlTransferText } from './secsSmlTransfer'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
+import CustomCeidDialog from './log-timeline/components/CustomCeidDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
 import RangeExportDialog from './log-timeline/components/RangeExportDialog.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
@@ -243,6 +249,7 @@ type LogTimelineWorkerRequest = {
   rulesList: RuleItem[]
   sxfyList: SxFyRuleItem[]
   ceidMatchMode: CeidMatchMode
+  customCeidRule?: CeidMatchRule
 }
 
 let mainContentElement: HTMLElement | null = null
@@ -253,6 +260,8 @@ let parseRequestVersion = 0
 const importDialogVisible = ref(false)
 const importText = ref('')
 const ceidMatchMode = ref<CeidMatchMode>('S6F11')
+const customCeidDialogVisible = ref(false)
+const customCeidRule = ref<CeidMatchRule>({ s: 6, f: 11, keyPos: '[0][1]' })
 
 const rulesList = ref<RuleItem[]>([])
 const sxfyList = ref<SxFyRuleItem[]>([
@@ -431,7 +440,8 @@ const createParseWorkerRequest = (currentLogContent: string): LogTimelineWorkerR
     logContent: currentLogContent,
     rulesList: rulesList.value.map(rule => ({ ...rule })),
     sxfyList: sxfyList.value.map(rule => ({ ...rule })),
-    ceidMatchMode: ceidMatchMode.value
+    ceidMatchMode: ceidMatchMode.value,
+    customCeidRule: { ...customCeidRule.value }
   }
 }
 
@@ -451,7 +461,11 @@ const sxfyColorMaps = computed(() => {
   return { byRuleId, bySignature }
 })
 
-const getMarkerColor = (id: string, type: 'CEID' | 'SxFy' = 'CEID', ruleId?: string) => {
+const getMarkerColor = (id: string, type: TimelineItem['type'] = 'CEID', ruleId?: string) => {
+  if (type === 'RangeMarker') {
+    return '#64748b'
+  }
+
   if (type === 'SxFy') {
     if (ruleId) {
       const color = sxfyColorMaps.value.byRuleId.get(ruleId)
@@ -500,8 +514,17 @@ const availableDescOptions = computed(() => {
   return Array.from(descSet).sort()
 })
 
+const rangeMarkerTimelineData = computed(() => {
+  return buildRangeMarkerTimeline(timelineData.value, logContent.value || '', [
+    { kind: 'start', block: rangeStartBlock.value },
+    { kind: 'end', block: rangeEndBlock.value }
+  ], getMessageBlockText)
+})
+
 const filteredTimelineData = computed(() => {
-  return timelineData.value.filter(item => {
+  return rangeMarkerTimelineData.value.filter(item => {
+    if (item.rangeMarkers?.length) return true
+
     if (filterSxFy.value) {
       if (item.sxFy !== filterSxFy.value) return false
       if (filterDesc.value.length > 0 && !filterDesc.value.includes(item.desc)) return false
@@ -510,8 +533,12 @@ const filteredTimelineData = computed(() => {
   })
 })
 
+const businessFilteredTimelineData = computed(() => {
+  return filteredTimelineData.value.filter(item => item.type !== 'RangeMarker')
+})
+
 const highlightDisabled = computed(() => {
-  return filteredTimelineData.value.length > LOG_TIMELINE_LIMITS.highlightDecorationMaxCount
+  return businessFilteredTimelineData.value.length > LOG_TIMELINE_LIMITS.highlightDecorationMaxCount
 })
 
 const sampleTimelineItems = (items: TimelineItem[], limit: number) => {
@@ -541,7 +568,7 @@ const sampleTimelineItems = (items: TimelineItem[], limit: number) => {
 }
 
 const renderedMarkerItems = computed(() => {
-  return sampleTimelineItems(filteredTimelineData.value, LOG_TIMELINE_LIMITS.scrollMarkerSampleMaxCount)
+  return sampleTimelineItems(businessFilteredTimelineData.value, LOG_TIMELINE_LIMITS.scrollMarkerSampleMaxCount)
 })
 
 const canSendRecordedLogsToDiff = computed(() => {
@@ -557,7 +584,7 @@ const canExportMarkedRange = computed(() => {
 })
 
 const markerSamplingEnabled = computed(() => {
-  return renderedMarkerItems.value.length < filteredTimelineData.value.length
+  return renderedMarkerItems.value.length < businessFilteredTimelineData.value.length
 })
 
 const logViewerPerformanceHint = computed(() => {
@@ -604,13 +631,13 @@ const selectedTimelineItemKeySet = computed(() => {
 })
 
 const checkedFilteredTimelineData = computed(() => {
-  return filteredTimelineData.value.filter(item => {
+  return businessFilteredTimelineData.value.filter(item => {
     return selectedTimelineItemKeySet.value.has(getTimelineItemKey(item))
   })
 })
 
 const exportTimelineItems = computed(() => {
-  return exportSelectedOnly.value ? checkedFilteredTimelineData.value : filteredTimelineData.value
+  return exportSelectedOnly.value ? checkedFilteredTimelineData.value : businessFilteredTimelineData.value
 })
 
 const canExportTimelineItems = computed(() => {
@@ -621,7 +648,7 @@ const toggleTimelineItemChecked = ({ key, checked, shiftKey }: { key: string, ch
   const nextKeys = new Set(selectedTimelineItemKeys.value)
 
   if (shiftKey && lastSelectedTimelineItemKey.value && lastSelectedTimelineItemKey.value !== key) {
-    const orderedKeys = filteredTimelineData.value.map(getTimelineItemKey)
+    const orderedKeys = businessFilteredTimelineData.value.map(getTimelineItemKey)
     const anchorIndex = orderedKeys.indexOf(lastSelectedTimelineItemKey.value)
     const targetIndex = orderedKeys.indexOf(key)
 
@@ -654,7 +681,7 @@ const toggleTimelineItemChecked = ({ key, checked, shiftKey }: { key: string, ch
 }
 
 const handleTimelineContextAction = ({ action, key }: { action: 'selectAll' | 'clearAll' | 'selectSameSxFy' | 'selectSameCeid', key?: string }) => {
-  const currentItems = filteredTimelineData.value
+  const currentItems = businessFilteredTimelineData.value
   const nextKeys = new Set(selectedTimelineItemKeys.value)
 
   if (action === 'selectAll') {
@@ -905,6 +932,13 @@ const getContextMenuPosition = (event: MouseEvent) => {
 const getMessageBlockText = (block: LogMessageBlock) => {
   if (!logContent.value) {
     return ''
+  }
+
+  const doc = viewRef.value?.state.doc
+  if (doc && block.startLine >= 1 && block.startLine <= doc.lines) {
+    const startLine = doc.line(block.startLine)
+    const endLine = doc.line(Math.min(block.endLine, doc.lines))
+    return doc.sliceString(startLine.from, endLine.to)
   }
 
   return splitLogLines(logContent.value)
@@ -1386,7 +1420,7 @@ const removeSxFyRule = (index: number) => {
 const updateHighlights = () => {
   if (!viewRef.value) return
 
-  if (filteredTimelineData.value.length === 0 || highlightDisabled.value) {
+  if (businessFilteredTimelineData.value.length === 0 || highlightDisabled.value) {
     viewRef.value.dispatch({
       effects: highlightCompartment.reconfigure(EditorView.decorations.of(Decoration.none))
     })
@@ -1395,7 +1429,7 @@ const updateHighlights = () => {
 
   const doc = viewRef.value.state.doc
   viewRef.value.dispatch({
-    effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(filteredTimelineData.value, doc)))
+    effects: highlightCompartment.reconfigure(EditorView.decorations.of(getHighlightExtension(businessFilteredTimelineData.value, doc)))
   })
 }
 
@@ -1471,6 +1505,15 @@ const exportMarkedRangeLogs = async () => {
   }
 }
 
+const openCustomCeidDialog = () => { customCeidDialogVisible.value = true }
+const saveCustomCeidRule = (rule: CeidMatchRule) => {
+  if (!/^(?:\[\d+\])+$/.test(rule.keyPos)) { ElMessage.warning('关键值位置格式应为 [0][1]'); return }
+  customCeidRule.value = { ...rule }
+  ceidMatchMode.value = 'CUSTOM'
+  customCeidDialogVisible.value = false
+  if (logContent.value) applyRulesAndParse()
+}
+
 const confirmRangeExport = ({ machineId, batchId }: { machineId: string, batchId: string }) => {
   if (!rangeExportContent.value || !logDate.value || !rangeExportContentHash.value) {
     ElMessage.warning('导出信息已失效，请重新选择导出区间')
@@ -1505,7 +1548,7 @@ const getExportCandidateTimelineItems = () => {
     return null
   }
 
-  if (!filteredTimelineData.value.length) {
+  if (!businessFilteredTimelineData.value.length) {
     ElMessage.warning('当前没有可导出的命中记录')
     return null
   }
@@ -1888,8 +1931,11 @@ const onJsonFileSelected = async (e: Event) => {
   try {
     const text = await file.text()
     const data = JSON.parse(text)
-    if (data.ceidMatchMode === 'S6F11' || data.ceidMatchMode === 'S6F3') {
+    if (data.ceidMatchMode === 'S6F11' || data.ceidMatchMode === 'S6F3' || data.ceidMatchMode === 'CUSTOM') {
       ceidMatchMode.value = data.ceidMatchMode
+    }
+    if (data.customCeidRule && typeof data.customCeidRule.s === 'number' && typeof data.customCeidRule.f === 'number' && typeof data.customCeidRule.keyPos === 'string') {
+      customCeidRule.value = { ...data.customCeidRule }
     }
     if (data.ceidRules) rulesList.value = data.ceidRules
     if (data.sxfyRules) sxfyList.value = data.sxfyRules
@@ -1904,6 +1950,7 @@ const onJsonFileSelected = async (e: Event) => {
 const exportJsonConfig = () => {
   const data = {
     ceidMatchMode: ceidMatchMode.value,
+    customCeidRule: customCeidRule.value,
     ceidRules: rulesList.value,
     sxfyRules: sxfyList.value
   }
@@ -1927,6 +1974,7 @@ const clearAllData = () => {
   }).then(() => {
     parseRequestVersion += 1
     ceidMatchMode.value = 'S6F11'
+    customCeidRule.value = { s: 6, f: 11, keyPos: '[0][1]' }
     rulesList.value = []
     sxfyList.value = [
       { id: 'default-s2f41', s: 2, f: 41, keyPos: '[0][0]', color: '#f97316', enabled: true, desc: 'RCMD' },

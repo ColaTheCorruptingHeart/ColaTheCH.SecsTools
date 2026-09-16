@@ -1,5 +1,6 @@
 ﻿import type { CeidMatchMode, RuleItem, SxFyRuleItem, TimelineItem } from './types'
 import type { SecsLogDialect as LogDialect } from '../secs-log/types'
+import type { CeidMatchRule } from './types'
 import {
   matchHeaderLine,
   matchStandaloneSfLine,
@@ -18,7 +19,8 @@ export function analyzeLogTimelineDetailed(
   logContent: string,
   rulesList: RuleItem[],
   sxfyList: SxFyRuleItem[],
-  ceidMatchMode: CeidMatchMode = 'S6F11'
+  ceidMatchMode: CeidMatchMode = 'S6F11',
+  customCeidRule?: CeidMatchRule
 ): import('./types').LogTimelineAnalysisResult {
   const ruleMap = new Map<string, string>()
   rulesList.forEach(rule => {
@@ -44,6 +46,11 @@ export function analyzeLogTimelineDetailed(
   })
 
   const timeline: TimelineItem[] = []
+  const resolvedCustomRule = customCeidRule || { s: 6, f: 11, keyPos: '[0][1]' }
+  const ceidMatchSxFy = ceidMatchMode === 'CUSTOM' ? `S${resolvedCustomRule.s}F${resolvedCustomRule.f}` : ceidMatchMode
+  const ceidMatchPath = ceidMatchMode === 'CUSTOM'
+    ? Array.from(resolvedCustomRule.keyPos.matchAll(/\[(\d+)\]/g)).map(match => Number(match[1]))
+    : [0, 1]
   const diagnostics: import('./types').TimelineParseDiagnostic[] = []
   const lines = splitLogLines(logContent)
   const blocks = buildLogMessageBlocks(lines)
@@ -82,7 +89,7 @@ export function analyzeLogTimelineDetailed(
         timeline.push({ time, sxFy: sfName, ceid: sfName, ruleId: rule.id, type: 'SxFy', desc: rule.desc || `匹配到 ${sfName} 消息`, line: block.contentStartLine })
       }
     })
-    if (!activeSxFyRules.length && sfName !== ceidMatchMode) return
+    if (!activeSxFyRules.length && sfName !== ceidMatchSxFy) return
     const parsed = parseSmlTree(rawLines.join('\n'))
     parsed.diagnostics.forEach(diagnostic => {
       diagnostics.push({
@@ -96,7 +103,7 @@ export function analyzeLogTimelineDetailed(
       })
     })
     if (!summarizeSmlDiagnostics(parsed).isUsable) return
-    const ceidNode = sfName === ceidMatchMode ? getNodeAtPath(parsed.roots, [0, 1]) : undefined
+    const ceidNode = sfName === ceidMatchSxFy ? getNodeAtPath(parsed.roots, ceidMatchPath) : undefined
     const ceidValue = getNodeValueText(ceidNode).replace(/^['"]|['"]$/g, '').trim()
     if (ceidValue && ruleMap.has(ceidValue)) {
       timeline.push({ time, sxFy: sfName, ceid: ceidValue, type: 'CEID', desc: ruleMap.get(ceidValue) || '', line: block.startLine + (ceidNode?.sourceRange?.startLine || 1) - 1 })
@@ -118,7 +125,8 @@ export function analyzeLogTimeline(
   logContent: string,
   rulesList: RuleItem[],
   sxfyList: SxFyRuleItem[],
-  ceidMatchMode: CeidMatchMode = 'S6F11'
+  ceidMatchMode: CeidMatchMode = 'S6F11',
+  customCeidRule?: CeidMatchRule
 ) {
-  return analyzeLogTimelineDetailed(logContent, rulesList, sxfyList, ceidMatchMode).timeline
+  return analyzeLogTimelineDetailed(logContent, rulesList, sxfyList, ceidMatchMode, customCeidRule).timeline
 }

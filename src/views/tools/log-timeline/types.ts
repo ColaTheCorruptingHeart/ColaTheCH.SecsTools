@@ -3,7 +3,13 @@
 export type { LogMessageBlock } from '../secs-log/types'
 import type { SmlDiagnosticCode } from '../secs-log/sml'
 
-export type CeidMatchMode = 'S6F11' | 'S6F3'
+export type CeidMatchMode = 'S6F11' | 'S6F3' | 'CUSTOM'
+
+export interface CeidMatchRule {
+  s: number
+  f: number
+  keyPos: string
+}
 
 export interface RuleItem {
   ceid: string
@@ -22,6 +28,10 @@ export interface SxFyRuleItem {
   desc?: string
 }
 
+export type RangeMarkerKind = 'start' | 'end'
+
+export type TimelineItemType = 'CEID' | 'SxFy' | 'RangeMarker'
+
 export interface TimelineItem {
   time: string
   sxFy: string
@@ -29,7 +39,8 @@ export interface TimelineItem {
   ruleId?: string
   desc: string
   line: number
-  type?: 'CEID' | 'SxFy'
+  type?: TimelineItemType
+  rangeMarkers?: RangeMarkerKind[]
 }
 
 export interface TimelineParseDiagnostic {

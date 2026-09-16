@@ -62,7 +62,7 @@ const props = defineProps<{
   bottomOffset: number
   hasView: boolean
   performanceHint: string
-  getMarkerColor: (id: string, type?: 'CEID' | 'SxFy', ruleId?: string) => string
+  getMarkerColor: (id: string, type?: TimelineItem['type'], ruleId?: string) => string
   getScrollMarkerTop: (line: number) => string
 }>()
 
