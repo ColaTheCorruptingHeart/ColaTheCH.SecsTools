@@ -88,11 +88,11 @@
         <el-checkbox v-model="exportSelectedOnlyModel" size="small">只导出已勾选报文</el-checkbox>
       </div>
       <div class="flex gap-2">
-        <el-button class="ml-0! flex-1" size="small" type="primary" :disabled="!canExport" @click="emit('exportLogs')">
+        <el-button class="ml-0! flex-1" size="small" type="primary" :loading="exportLoading" :disabled="!canExport || exportLoading" @click="emit('exportLogs')">
           <el-icon class="mr-1"><Download /></el-icon>
           导出命中报文
         </el-button>
-        <el-button class="ml-0! flex-1" size="small" plain :disabled="!canExport" @click="emit('exportCommandSet')">
+        <el-button class="ml-0! flex-1" size="small" plain :loading="exportLoading" :disabled="!canExport || exportLoading" @click="emit('exportCommandSet')">
           <el-icon class="mr-1"><Download /></el-icon>
           导出报文集
         </el-button>
@@ -140,6 +140,7 @@ const props = defineProps<{
   exportKeepTimeLine: boolean
   exportSelectedOnly: boolean
   canExport: boolean
+  exportLoading: boolean
   getMarkerColor: (id: string, type?: TimelineItem['type'], ruleId?: string) => string
   getItemKey: (item: TimelineItem) => string
 }>()

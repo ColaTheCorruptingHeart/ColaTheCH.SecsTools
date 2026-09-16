@@ -104,7 +104,7 @@ export const toolsConfig: ToolCategory[] = [
       {
         id: 'slot-map-converter',
         name: 'Slot 转换工具',
-        desc: '支持 25 槽位选择、25 位 map / 反相 map / 区间表达式之间的相互转换。',
+        desc: '支持 25 槽位选择、自定义单数字映射、25 位 map、纵向 U1 List、反相结果与区间表达式转换。',
         path: '/tools/slot-map-converter',
         icon: 'Grid',
         color: '#06b6d4', // cyan-500

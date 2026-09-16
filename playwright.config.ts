@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test'
+import { latestRelease, RELEASE_ACKNOWLEDGEMENT_STORAGE_KEY } from './src/config/releaseNotes'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -11,7 +12,18 @@ export default defineConfig({
     channel: process.platform === 'win32' ? 'msedge' : undefined,
     headless: true,
     trace: 'retain-on-failure',
-    screenshot: 'only-on-failure'
+    screenshot: 'only-on-failure',
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'http://127.0.0.1:63897',
+          localStorage: [
+            { name: RELEASE_ACKNOWLEDGEMENT_STORAGE_KEY, value: latestRelease.version }
+          ]
+        }
+      ]
+    }
   },
   webServer: {
     command: 'npm run dev -- --host 127.0.0.1',

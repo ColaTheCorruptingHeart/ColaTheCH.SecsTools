@@ -3,9 +3,16 @@ import { defineConfig } from 'vite';
 import plugin from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { latestRelease } from './src/config/releaseNotes';
 
 const packageText = readFileSync(new URL('./package.json', import.meta.url), 'utf8').replace(/^\uFEFF/, '');
 const packageJson = JSON.parse(packageText) as { version: string };
+
+if (packageJson.version !== latestRelease.version) {
+    throw new Error(
+        `Release notes version (${latestRelease.version}) must match package version (${packageJson.version}).`,
+    );
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({

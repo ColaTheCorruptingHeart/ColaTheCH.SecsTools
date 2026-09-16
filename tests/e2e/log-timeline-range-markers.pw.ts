@@ -50,3 +50,40 @@ test('syncs range points to existing and virtual timeline nodes', async ({ page 
   expect(horizontalOverflow).toBe(false)
   await page.screenshot({ path: testInfo.outputPath('range-markers-mobile.png'), fullPage: true })
 })
+
+test('uses traceable names for matched-log and command-set downloads', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/tools/log-timeline-analyzer')
+  await page.waitForLoadState('networkidle')
+
+  await page.locator('input[type="file"][accept=".log,.txt"]').setInputFiles({
+    name: 'equipment-log-20260916.log',
+    mimeType: 'text/plain',
+    buffer: Buffer.from(rangeMarkerLog)
+  })
+  await expect(page.locator('.el-loading-mask')).toHaveCount(0)
+  await expect(page.getByTestId('timeline-item').filter({ hasText: 'RCMD: START' })).toBeVisible()
+
+  await page.getByRole('button', { name: '导出命中报文' }).click()
+  const logDialog = page.getByRole('dialog', { name: '导出命中报文' })
+  await expect(logDialog).toBeVisible()
+  await logDialog.locator('.el-select input').fill('EQ/01')
+  await page.getByRole('option', { name: 'EQ/01', exact: true }).click()
+  await logDialog.locator('.el-form-item').filter({ hasText: '批次号' }).locator('input').fill('LOT 42')
+  await expect(logDialog.getByText(/^EQ-01_LOT-42_2026-09-16_[A-F0-9]{12}\.log$/)).toBeVisible()
+
+  const logDownloadPromise = page.waitForEvent('download')
+  await logDialog.getByRole('button', { name: '导出日志' }).click()
+  const logDownload = await logDownloadPromise
+  expect(logDownload.suggestedFilename()).toMatch(/^EQ-01_LOT-42_2026-09-16_[A-F0-9]{12}\.log$/)
+
+  await page.getByRole('button', { name: '导出报文集' }).click()
+  const commandSetDialog = page.getByRole('dialog', { name: '导出报文集' })
+  await expect(commandSetDialog).toBeVisible()
+  await expect(commandSetDialog.getByText(/^timeline-command-set_2026-09-16_[A-F0-9]{12}\.zip$/)).toBeVisible()
+
+  const zipDownloadPromise = page.waitForEvent('download')
+  await commandSetDialog.getByRole('button', { name: '导出压缩包' }).click()
+  const zipDownload = await zipDownloadPromise
+  expect(zipDownload.suggestedFilename()).toMatch(/^timeline-command-set_2026-09-16_[A-F0-9]{12}\.zip$/)
+})

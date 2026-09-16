@@ -22,6 +22,15 @@ export type RangeExportFileNameParams = {
   contentHash: string
 }
 
+export type StructuredExportFileNameParams = {
+  machineId: string
+  batchId: string
+  fallbackSegment: string
+  logDate: string
+  contentHash: string
+  extension: string
+}
+
 const MACHINE_SETTINGS_STORAGE_KEY = 'colathech:secs-tools:log-timeline:range-export-machines'
 const MAX_MACHINE_OPTION_COUNT = 20
 
@@ -83,6 +92,29 @@ export const normalizeFileNameSegment = (value: string) => {
     .replace(/^[._-]+|[._-]+$/g, '')
 }
 
+export const buildStructuredExportFileName = ({
+  machineId,
+  batchId,
+  fallbackSegment,
+  logDate,
+  contentHash,
+  extension
+}: StructuredExportFileNameParams) => {
+  const segments: string[] = []
+  const normalizedMachineId = normalizeFileNameSegment(machineId)
+
+  if (normalizedMachineId) {
+    segments.push(normalizedMachineId)
+  }
+
+  segments.push(normalizeFileNameSegment(batchId) || normalizeFileNameSegment(fallbackSegment) || 'export')
+  segments.push(normalizeFileNameSegment(logDate) || 'unknown-date')
+  segments.push(normalizeFileNameSegment(contentHash) || 'content-hash')
+
+  const normalizedExtension = normalizeFileNameSegment(extension.replace(/^\.+/, '')) || 'log'
+  return `${segments.join('_')}.${normalizedExtension}`
+}
+
 export const buildRangeExportFileName = ({
   machineId,
   batchId,
@@ -91,18 +123,14 @@ export const buildRangeExportFileName = ({
   logDate,
   contentHash
 }: RangeExportFileNameParams) => {
-  const segments: string[] = []
-  const normalizedMachineId = normalizeFileNameSegment(machineId)
-
-  if (normalizedMachineId) {
-    segments.push(normalizedMachineId)
-  }
-
-  segments.push(normalizeFileNameSegment(batchId) || `L${startLine}-L${endLine}`)
-  segments.push(normalizeFileNameSegment(logDate) || 'unknown-date')
-  segments.push(normalizeFileNameSegment(contentHash) || 'content-hash')
-
-  return `${segments.join('_')}.log`
+  return buildStructuredExportFileName({
+    machineId,
+    batchId,
+    fallbackSegment: `L${startLine}-L${endLine}`,
+    logDate,
+    contentHash,
+    extension: 'log'
+  })
 }
 
 const createFallbackContentHash = (bytes: Uint8Array) => {

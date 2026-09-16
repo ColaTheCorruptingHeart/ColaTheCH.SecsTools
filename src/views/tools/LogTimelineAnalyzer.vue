@@ -91,6 +91,7 @@
         :export-keep-time-line="exportKeepTimeLine"
         :export-selected-only="exportSelectedOnly"
         :can-export="canExportTimelineItems"
+        :export-loading="matchedExportHashing"
         :get-marker-color="getMarkerColor"
         :get-item-key="getTimelineItemKey"
         @update:filterSxFy="filterSxFy = $event"
@@ -171,15 +172,30 @@
 
     <CustomCeidDialog v-model="customCeidDialogVisible" :form="customCeidRule" @save="saveCustomCeidRule" />
 
-    <RangeExportDialog
+    <ExportFileNameDialog
       v-model="rangeExportDialogVisible"
+      title="导出标记区间"
       :machine-options="rangeExportMachineOptions"
-      :start-line="rangeExportStartLine"
-      :end-line="rangeExportEndLine"
+      :fallback-segment="`L${rangeExportStartLine}-L${rangeExportEndLine}`"
       :log-date="logDate"
       :content-hash="rangeExportContentHash"
+      extension="log"
+      confirm-label="导出日志"
       @deleteMachineOption="removeRangeExportMachineOption"
       @confirm="confirmRangeExport"
+    />
+
+    <ExportFileNameDialog
+      v-model="matchedExportDialogVisible"
+      :title="matchedExportKind === 'logs' ? '导出命中报文' : '导出报文集'"
+      :machine-options="rangeExportMachineOptions"
+      :fallback-segment="matchedExportKind === 'logs' ? 'timeline-hits' : 'timeline-command-set'"
+      :log-date="logDate"
+      :content-hash="matchedExportContentHash"
+      :extension="matchedExportKind === 'logs' ? 'log' : 'zip'"
+      :confirm-label="matchedExportKind === 'logs' ? '导出日志' : '导出压缩包'"
+      @deleteMachineOption="removeRangeExportMachineOption"
+      @confirm="confirmMatchedExport"
     />
   </div>
 </template>
@@ -198,6 +214,7 @@ import { buildLogMessageBlocks, splitLogLines } from './log-timeline/parser'
 import { buildRangeMarkerTimeline } from './log-timeline/rangeMarkers'
 import {
   buildRangeExportFileName,
+  buildStructuredExportFileName,
   createRangeExportContentHash,
   deleteRangeExportMachineOption,
   extractDateFromFileName,
@@ -207,6 +224,7 @@ import {
 import type {
   CeidMatchMode,
   CeidMatchRule,
+  ExportedMatchedBlock,
   LogMessageBlock,
   RuleItem,
   SxFyRuleItem,
@@ -218,8 +236,8 @@ import { discardLogDiffTransferPayload, storeLogDiffTransferPayload } from './lo
 import { discardSecsSmlTransferText, storeSecsSmlTransferText } from './secsSmlTransfer'
 import CeidImportDialog from './log-timeline/components/CeidImportDialog.vue'
 import CustomCeidDialog from './log-timeline/components/CustomCeidDialog.vue'
+import ExportFileNameDialog from './log-timeline/components/ExportFileNameDialog.vue'
 import LogViewerPanel from './log-timeline/components/LogViewerPanel.vue'
-import RangeExportDialog from './log-timeline/components/RangeExportDialog.vue'
 import RulesPanel from './log-timeline/components/RulesPanel.vue'
 import SxFyRuleDialog from './log-timeline/components/SxFyRuleDialog.vue'
 import TimelinePanel from './log-timeline/components/TimelinePanel.vue'
@@ -321,6 +339,23 @@ const rangeExportContent = ref('')
 const rangeExportContentHash = ref('')
 const rangeExportHashing = ref(false)
 let rangeExportHashRequestVersion = 0
+type MatchedExportKind = 'logs' | 'command-set'
+const matchedExportKind = ref<MatchedExportKind>('logs')
+const matchedExportDialogVisible = ref(false)
+const matchedExportBlocks = ref<ExportedMatchedBlock[]>([])
+const matchedExportContent = ref('')
+const matchedExportContentHash = ref('')
+const matchedExportHashing = ref(false)
+let matchedExportHashRequestVersion = 0
+
+const resetMatchedExportState = () => {
+  matchedExportHashRequestVersion += 1
+  matchedExportDialogVisible.value = false
+  matchedExportBlocks.value = []
+  matchedExportContent.value = ''
+  matchedExportContentHash.value = ''
+  matchedExportHashing.value = false
+}
 
 const resetRangeExportState = () => {
   rangeExportHashRequestVersion += 1
@@ -330,6 +365,7 @@ const resetRangeExportState = () => {
   rangeExportContent.value = ''
   rangeExportContentHash.value = ''
   rangeExportHashing.value = false
+  resetMatchedExportState()
 }
 
 const viewRef = shallowRef<EditorView>()
@@ -1561,7 +1597,7 @@ const getExportCandidateTimelineItems = () => {
   return exportTimelineItems.value
 }
 
-const exportMatchedLogs = () => {
+const prepareMatchedExport = async (kind: MatchedExportKind) => {
   const exportItems = getExportCandidateTimelineItems()
   if (!logContent.value || !exportItems) {
     return
@@ -1574,39 +1610,77 @@ const exportMatchedLogs = () => {
     return
   }
 
-  const now = new Date()
-  const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
-  downloadTextFile(`${exportedBlocks.map(block => block.text).join('\n\n')}\n`, `timeline-hits-${timestamp}.log`)
-  ElMessage.success(`已导出 ${exportedBlocks.length} 条去重后的完整报文`)
+  const exportContent = `${exportedBlocks.map(block => block.text).join('\n\n')}\n`
+  const requestVersion = ++matchedExportHashRequestVersion
+  matchedExportHashing.value = true
+
+  try {
+    const contentHash = await createRangeExportContentHash(exportContent)
+    if (requestVersion !== matchedExportHashRequestVersion) {
+      return
+    }
+
+    matchedExportKind.value = kind
+    matchedExportBlocks.value = exportedBlocks
+    matchedExportContent.value = exportContent
+    matchedExportContentHash.value = contentHash
+    matchedExportDialogVisible.value = true
+  } catch (error: unknown) {
+    ElMessage.error(`生成导出文件信息失败: ${getErrorMessage(error)}`)
+  } finally {
+    if (requestVersion === matchedExportHashRequestVersion) {
+      matchedExportHashing.value = false
+    }
+  }
 }
 
-const exportMatchedCommandSet = async () => {
-  const exportItems = getExportCandidateTimelineItems()
-  if (!logContent.value || !exportItems) {
+const exportMatchedLogs = () => {
+  void prepareMatchedExport('logs')
+}
+
+const exportMatchedCommandSet = () => {
+  void prepareMatchedExport('command-set')
+}
+
+const confirmMatchedExport = async ({ machineId, batchId }: { machineId: string, batchId: string }) => {
+  if (!matchedExportContent.value || !matchedExportBlocks.value.length || !matchedExportContentHash.value) {
+    ElMessage.warning('导出信息已失效，请重新选择命中报文')
+    matchedExportDialogVisible.value = false
     return
   }
 
-  const exportedBlocks = buildExportedMatchedBlocks(logContent.value, exportItems, exportKeepTimeLine.value)
-  if (!exportedBlocks.length) {
-    ElMessage.warning('未能根据命中记录生成报文集')
+  const isCommandSet = matchedExportKind.value === 'command-set'
+  const fileName = buildStructuredExportFileName({
+    machineId,
+    batchId,
+    fallbackSegment: isCommandSet ? 'timeline-command-set' : 'timeline-hits',
+    logDate: logDate.value,
+    contentHash: matchedExportContentHash.value,
+    extension: isCommandSet ? 'zip' : 'log'
+  })
+  const savedSettings = saveRangeExportMachineSettings(machineId, rangeExportMachineOptions.value)
+  rangeExportMachineOptions.value = savedSettings.machineIds
+
+  if (!isCommandSet) {
+    downloadTextFile(matchedExportContent.value, fileName)
+    matchedExportDialogVisible.value = false
+    ElMessage.success(`已导出 ${matchedExportBlocks.value.length} 条去重后的完整报文`)
     return
   }
 
   const zip = new JSZip()
   const nameCounter = new Map<string, number>()
-
-  exportedBlocks.forEach(block => {
+  matchedExportBlocks.value.forEach(block => {
     const baseName = buildCommandFileBaseName(block)
-    const fileName = buildUniqueFileName(baseName, nameCounter)
-    zip.file(fileName, `${block.text}\n`)
+    const commandFileName = buildUniqueFileName(baseName, nameCounter)
+    zip.file(commandFileName, `${block.text}\n`)
   })
 
   try {
     const zipBlob = await zip.generateAsync({ type: 'blob' })
-    const now = new Date()
-    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
-    downloadBlobFile(zipBlob, `timeline-command-set-${timestamp}.zip`)
-    ElMessage.success(`已导出 ${exportedBlocks.length} 条报文集报文压缩包`)
+    downloadBlobFile(zipBlob, fileName)
+    matchedExportDialogVisible.value = false
+    ElMessage.success(`已导出 ${matchedExportBlocks.value.length} 条报文集报文压缩包`)
   } catch (error: unknown) {
     ElMessage.error(`导出报文集失败: ${getErrorMessage(error)}`)
   }
