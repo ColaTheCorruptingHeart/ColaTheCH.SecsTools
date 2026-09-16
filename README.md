@@ -91,6 +91,15 @@ npm run build
 npm run lint
 ```
 
+### 自动化测试
+
+```bash
+npm test
+npm run test:e2e
+```
+
+SML 方言、诊断契约和扩展说明见 [SML 解析支持矩阵](docs/sml-parser.md)。
+
 ## 可用脚本
 
 | 脚本 | 说明 |
@@ -101,6 +110,9 @@ npm run lint
 | `npm run type-check` | 执行 Vue + TypeScript 类型检查 |
 | `npm run lint` | 运行全部 lint 流程 |
 | `npm run preview` | 预览构建产物 |
+| `npm test` | 运行 Vitest 单元与集成测试 |
+| `npm run test:watch` | 监听文件并运行相关 Vitest 测试 |
+| `npm run test:e2e` | 运行 Playwright 浏览器测试 |
 
 ## 目录结构
 

@@ -8,6 +8,7 @@
         <el-select :model-value="ceidMatchMode" size="small" class="w-full" @update:model-value="onCeidMatchModeChange">
           <el-option label="S6F11" value="S6F11" />
           <el-option label="S6F3" value="S6F3" />
+          <el-option label="自定义" value="CUSTOM" />
         </el-select>
       </div>
       <el-button size="small" type="primary" plain @click="emit('openCeidImport')">导入</el-button>
@@ -80,6 +81,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   openCeidImport: []
   updateCeidMatchMode: [mode: CeidMatchMode]
+  openCustomCeid: []
   openSxFyAdd: []
   openSxFyEdit: [rule: SxFyRuleItem]
   removeRule: [index: number]
@@ -91,6 +93,11 @@ const emit = defineEmits<{
 }>()
 
 const onCeidMatchModeChange = (value: string | number | boolean | undefined) => {
+  if (value === 'CUSTOM') {
+    emit('openCustomCeid')
+    return
+  }
+
   if (value === 'S6F11' || value === 'S6F3') {
     if (value !== props.ceidMatchMode) {
       emit('updateCeidMatchMode', value)
