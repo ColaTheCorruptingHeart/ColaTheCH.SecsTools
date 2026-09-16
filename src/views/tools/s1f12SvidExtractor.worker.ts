@@ -1,52 +1,22 @@
 ﻿/// <reference lib="webworker" />
 
-import { getNodeValueText, parseSmlTree, type SecsSmlNode } from './secsSml'
-
-interface SvidRow {
-  index: number
-  svid: string
-  svname: string
-  units: string
-  remark: string
-}
+import { extractS1F12Svid, type SvidRow } from './s1f12-svid'
+import type { SmlDiagnostic } from './secsSml'
 
 type ExtractMessage =
-  | { type: 'success'; rows: SvidRow[] }
+  | { type: 'success'; rows: SvidRow[]; warnings?: string[]; diagnostics: SmlDiagnostic[] }
   | { type: 'error'; message: string }
-
-function normalizeCellValue(node: SecsSmlNode | undefined) {
-  const rawValue = getNodeValueText(node)
-  if (!rawValue) return ''
-
-  if (rawValue.startsWith('"') && rawValue.endsWith('"')) {
-    return rawValue.slice(1, -1)
-  }
-
-  return rawValue
-}
-
-function extractRows(rootNode: SecsSmlNode | undefined) {
-  if (!rootNode) return []
-
-  return rootNode.children
-    .map((itemNode, index) => ({
-      index: index + 1,
-      svid: normalizeCellValue(itemNode.children[0]),
-      svname: normalizeCellValue(itemNode.children[1]),
-      units: normalizeCellValue(itemNode.children[2]),
-      remark: ''
-    }))
-    .filter(row => row.svid || row.svname || row.units)
-}
 
 const workerScope = self as DedicatedWorkerGlobalScope
 
 workerScope.onmessage = (event: MessageEvent<string>) => {
   try {
-    const parsed = parseSmlTree(event.data)
+    const result = extractS1F12Svid(event.data)
     const message: ExtractMessage = {
       type: 'success',
-      rows: extractRows(parsed.roots[0])
+      rows: result.rows,
+      warnings: result.warnings.length ? result.warnings : undefined,
+      diagnostics: result.diagnostics
     }
 
     workerScope.postMessage(message)

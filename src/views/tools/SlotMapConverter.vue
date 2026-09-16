@@ -1,135 +1,198 @@
 ﻿<template>
-  <div class="h-full flex flex-col gap-4">
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div class="flex items-center gap-2">
-          <div class="p-2 bg-cyan-50 rounded-lg">
-            <el-icon class="text-cyan-500 text-xl"><Grid /></el-icon>
+  <div class="slot-map-page">
+    <section class="slot-map-card" aria-labelledby="slot-map-title">
+      <div class="slot-map-card__top">
+        <div>
+          <h2 id="slot-map-title">SlotMap</h2>
+          <p>第 1 个值对应 Slot1，所有格式使用相同的有片与空槽映射。</p>
+        </div>
+
+        <div class="mapping-fields" aria-label="槽位数字映射">
+          <span class="mapping-fields__label">数字映射</span>
+          <label>
+            <span>有片</span>
+            <input
+              :value="slotValueMapping.occupiedDigit"
+              inputmode="numeric"
+              maxlength="1"
+              aria-label="有片映射值"
+              data-testid="occupied-digit"
+              @input="updateMappingDigit('occupiedDigit', $event)"
+            />
+          </label>
+          <label>
+            <span>空槽</span>
+            <input
+              :value="slotValueMapping.emptyDigit"
+              inputmode="numeric"
+              maxlength="1"
+              aria-label="空槽映射值"
+              data-testid="empty-digit"
+              @input="updateMappingDigit('emptyDigit', $event)"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div class="slot-map-card__actions">
+        <div class="slot-summary">
+          <el-tag size="small" type="info">已选 {{ selectedCount }}/{{ SLOT_COUNT }}</el-tag>
+          <span>{{ humanReadableMap || '当前未选择任何槽位' }}</span>
+        </div>
+        <div class="action-buttons">
+          <el-button size="small" type="primary" @click="selectAllSlots">全选</el-button>
+          <el-button size="small" @click="selectOddSlots">奇数槽</el-button>
+          <el-button size="small" @click="selectEvenSlots">偶数槽</el-button>
+          <el-button size="small" @click="invertSelection">取反选择</el-button>
+          <el-button size="small" type="danger" plain @click="clearSlots">清空</el-button>
+        </div>
+      </div>
+
+      <div class="slot-scroll">
+        <div class="slot-row">
+          <button
+            v-for="(selected, index) in selectedSlots"
+            :key="index"
+            type="button"
+            class="slot-button"
+            :class="selected ? 'slot-button--active' : 'slot-button--inactive'"
+            :aria-pressed="selected"
+            :aria-label="`Slot ${index + 1}`"
+            @click="toggleSlot(index)"
+          >
+            {{ index + 1 }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="outputs-grid" aria-label="SlotMap 转换结果">
+      <div class="compact-stack">
+        <article class="output-card compact-card">
+          <header>
+            <span>25 位 map</span>
+            <div>
+              <el-button size="small" @click="copyText(slotMapText, '25 位 map')">复制</el-button>
+              <el-button size="small" type="primary" @click="applySlotMapText">应用</el-button>
+            </div>
+          </header>
+          <div class="output-card__body">
+            <el-input
+              v-model="slotMapText"
+              type="textarea"
+              :rows="3"
+              resize="none"
+              class="map-textarea"
+              data-testid="slot-map"
+              :placeholder="`输入 ${SLOT_COUNT} 位，仅使用 ${slotValueMapping.occupiedDigit} 和 ${slotValueMapping.emptyDigit}`"
+              @keyup.enter.ctrl="applySlotMapText"
+            />
+          </div>
+        </article>
+
+        <article class="output-card compact-card">
+          <header>
+            <span>25 位反相 map</span>
+            <div>
+              <el-button size="small" @click="copyText(invertedSlotMapText, '25 位反相 map')">复制</el-button>
+              <el-button size="small" type="primary" @click="applyInvertedSlotMapText">应用</el-button>
+            </div>
+          </header>
+          <div class="output-card__body">
+            <el-input
+              v-model="invertedSlotMapText"
+              type="textarea"
+              :rows="3"
+              resize="none"
+              class="map-textarea"
+              data-testid="inverted-slot-map"
+              :placeholder="`输入 ${SLOT_COUNT} 位反相 map`"
+              @keyup.enter.ctrl="applyInvertedSlotMapText"
+            />
+          </div>
+        </article>
+
+        <article class="output-card compact-card">
+          <header>
+            <span>人类可读 map</span>
+            <div>
+              <el-button size="small" @click="copyText(humanReadableMapText, '区间 map')">复制</el-button>
+              <el-button size="small" type="primary" @click="applyHumanReadableMapText">应用</el-button>
+            </div>
+          </header>
+          <div class="output-card__body">
+            <el-input
+              v-model="humanReadableMapText"
+              type="textarea"
+              :rows="3"
+              resize="none"
+              class="map-textarea"
+              placeholder="例如：1-5,8,10,17-25"
+              @keyup.enter.ctrl="applyHumanReadableMapText"
+            />
+          </div>
+        </article>
+      </div>
+
+      <article class="output-card list-card">
+        <header>
+          <div>
+            <span>纵向 U1 List</span>
           </div>
           <div>
-            <h2 class="text-lg font-semibold text-slate-800 m-0">Slot 转换工具</h2>
-            <p class="text-xs text-slate-500 m-0 mt-0.5">支持 25 槽位手动选择、map 图互转、反相 map 与区间表达式转换</p>
+            <el-button size="small" @click="copyText(verticalListText, '纵向 U1 List')">复制</el-button>
+            <el-button size="small" type="primary" @click="applyVerticalListText(false)">应用 List</el-button>
           </div>
+        </header>
+        <div class="output-card__body list-card__body">
+          <el-input
+            v-model="verticalListText"
+            type="textarea"
+            resize="none"
+            class="map-textarea list-textarea"
+            data-testid="vertical-list"
+            @keyup.enter.ctrl="applyVerticalListText(false)"
+          />
         </div>
+      </article>
 
-        <div class="flex flex-wrap items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-          <el-button size="small" type="primary" class="!rounded-md shadow-sm" @click="selectAllSlots">全选</el-button>
-          <el-button size="small" class="!rounded-md" @click="selectOddSlots">奇数槽</el-button>
-          <el-button size="small" class="!rounded-md" @click="selectEvenSlots">偶数槽</el-button>
-          <div class="w-px h-4 bg-slate-300 mx-1"></div>
-          <el-button size="small" class="!rounded-md" @click="invertSelection">取反选择</el-button>
-          <el-button size="small" type="danger" plain class="!rounded-md" @click="clearSlots">清空</el-button>
-        </div>
-      </div>
-    </div>
-
-    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-      <div class="flex flex-col gap-3">
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <article class="output-card list-card">
+        <header>
           <div>
-            <div class="text-sm font-medium text-slate-700">SlotMap</div>
-            <div class="text-xs text-slate-500 mt-1">第 1 个字符对应 Slot1，1 表示有 wafer，0 表示无 wafer。</div>
+            <span>纵向 U1 List · 反相</span>
           </div>
-          <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <el-tag size="small" type="info">已选 {{ selectedCount }}/25</el-tag>
-            <span>{{ humanReadableMap || '当前未选择任何槽位' }}</span>
+          <div>
+            <el-button size="small" @click="copyText(invertedVerticalListText, '纵向 U1 List 反相')">复制</el-button>
+            <el-button size="small" type="primary" @click="applyVerticalListText(true)">应用反相 List</el-button>
           </div>
-        </div>
-
-        <div class="slot-scroll">
-          <div class="slot-row">
-            <button
-              v-for="(selected, index) in selectedSlots"
-              :key="index"
-              type="button"
-              class="slot-button"
-              :class="selected ? 'slot-button--active' : 'slot-button--inactive'"
-              :aria-pressed="selected"
-              @click="toggleSlot(index)"
-            >
-              {{ index + 1 }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 min-h-0">
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-        <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
-          <span class="text-sm font-medium text-slate-600">25 位 map</span>
-          <div class="flex items-center gap-2">
-            <el-button size="small" class="!rounded-md" @click="copyText(slotMapText, '25 位 map')">复制</el-button>
-            <el-button size="small" type="primary" class="!rounded-md" @click="applySlotMapText">应用</el-button>
-          </div>
-        </div>
-        <div class="p-4 flex flex-col gap-3">
+        </header>
+        <div class="output-card__body list-card__body">
           <el-input
-            v-model="slotMapText"
+            v-model="invertedVerticalListText"
             type="textarea"
-            :rows="4"
             resize="none"
-            class="map-textarea"
-            placeholder="例如：0011000000000000000000000"
-            @keyup.enter.ctrl="applySlotMapText"
+            class="map-textarea list-textarea"
+            data-testid="inverted-vertical-list"
+            @keyup.enter.ctrl="applyVerticalListText(true)"
           />
-          <div class="text-xs text-slate-500">输入 25 位仅包含 0 和 1 的 map，点击“应用”即可反向恢复槽位状态。</div>
         </div>
-      </div>
-
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-        <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
-          <span class="text-sm font-medium text-slate-600">25 位反相 map</span>
-          <div class="flex items-center gap-2">
-            <el-button size="small" class="!rounded-md" @click="copyText(invertedSlotMapText, '25 位反相 map')">复制</el-button>
-            <el-button size="small" type="primary" class="!rounded-md" @click="applyInvertedSlotMapText">应用</el-button>
-          </div>
-        </div>
-        <div class="p-4 flex flex-col gap-3">
-          <el-input
-            v-model="invertedSlotMapText"
-            type="textarea"
-            :rows="4"
-            resize="none"
-            class="map-textarea"
-            placeholder="例如：1100111111111111111111111"
-            @keyup.enter.ctrl="applyInvertedSlotMapText"
-          />
-          <div class="text-xs text-slate-500">该字段表示当前 25 位 map 的取反结果，输入后应用时会自动还原为真实槽位。</div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-        <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
-          <span class="text-sm font-medium text-slate-600">人类可读 map</span>
-          <div class="flex items-center gap-2">
-            <el-button size="small" class="!rounded-md" @click="copyText(humanReadableMapText, '区间 map')">复制</el-button>
-            <el-button size="small" type="primary" class="!rounded-md" @click="applyHumanReadableMapText">应用</el-button>
-          </div>
-        </div>
-        <div class="p-4 flex flex-col gap-3">
-          <el-input
-            v-model="humanReadableMapText"
-            type="textarea"
-            :rows="4"
-            resize="none"
-            class="map-textarea"
-            placeholder="例如：1-5,8,10,17-25"
-            @keyup.enter.ctrl="applyHumanReadableMapText"
-          />
-          <div class="text-xs text-slate-500">支持单点和区间混合输入，例如 1-3,5,7,10-12。留空后应用可直接清空全部槽位。</div>
-        </div>
-      </div>
-    </div>
+      </article>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Grid } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-
-const SLOT_COUNT = 25
+import {
+  DEFAULT_SLOT_VALUE_MAPPING,
+  parseMappedMapText,
+  parseSlotSmlList,
+  serializeSelectionToMappedMap,
+  serializeSelectionToSmlList,
+  SLOT_COUNT,
+  type SlotValueMapping
+} from './slotMap'
 
 type SlotSelection = boolean[]
 
@@ -137,6 +200,9 @@ const selectedSlots = ref<SlotSelection>(createEmptySelection())
 const slotMapText = ref('')
 const invertedSlotMapText = ref('')
 const humanReadableMapText = ref('')
+const verticalListText = ref('')
+const invertedVerticalListText = ref('')
+const slotValueMapping = ref<SlotValueMapping>({ ...DEFAULT_SLOT_VALUE_MAPPING })
 
 const selectedCount = computed(() => selectedSlots.value.filter(Boolean).length)
 const humanReadableMap = computed(() => serializeSelectionToRanges(selectedSlots.value))
@@ -147,17 +213,6 @@ function createEmptySelection(): SlotSelection {
 
 function cloneSelection(selection: SlotSelection): SlotSelection {
   return selection.slice()
-}
-
-function serializeSelectionToMap(selection: SlotSelection) {
-  return selection.map(slot => (slot ? '1' : '0')).join('')
-}
-
-function invertBinaryMap(mapText: string) {
-  return mapText
-    .split('')
-    .map(char => (char === '1' ? '0' : '1'))
-    .join('')
 }
 
 function serializeSelectionToRanges(selection: SlotSelection) {
@@ -173,9 +228,7 @@ function serializeSelectionToRanges(selection: SlotSelection) {
     }
 
     const isRangeEnd = start !== -1 && (!isSelected || index === selection.length - 1)
-    if (!isRangeEnd) {
-      continue
-    }
+    if (!isRangeEnd) continue
 
     const end = isSelected && index === selection.length - 1 ? slotNumber : slotNumber - 1
     ranges.push(start === end ? `${start}` : `${start}-${end}`)
@@ -185,24 +238,9 @@ function serializeSelectionToRanges(selection: SlotSelection) {
   return ranges.join(',')
 }
 
-function normalizeMapInput(rawText: string) {
-  return rawText.replace(/[\s，,]/g, '')
-}
-
-function parseMapText(rawText: string) {
-  const normalized = normalizeMapInput(rawText)
-  if (!/^[01]{25}$/.test(normalized)) {
-    throw new Error('map 格式无效，请输入 25 位仅包含 0 和 1 的字符串')
-  }
-
-  return normalized.split('').map(char => char === '1')
-}
-
 function parseHumanReadableMap(rawText: string) {
   const normalized = rawText.replace(/，/g, ',').replace(/\s+/g, '')
-  if (!normalized) {
-    return createEmptySelection()
-  }
+  if (!normalized) return createEmptySelection()
 
   const selection = createEmptySelection()
   const parts = normalized.split(',').filter(Boolean)
@@ -225,10 +263,7 @@ function parseHumanReadableMap(rawText: string) {
     assertSlotNumber(start)
     assertSlotNumber(end)
 
-    if (start > end) {
-      throw new Error('区间起始槽位不能大于结束槽位')
-    }
-
+    if (start > end) throw new Error('区间起始槽位不能大于结束槽位')
     for (let slotNumber = start; slotNumber <= end; slotNumber += 1) {
       selection[slotNumber - 1] = true
     }
@@ -244,18 +279,39 @@ function assertSlotNumber(slotNumber: number) {
 }
 
 function syncTextsFromSelection() {
-  const mapText = serializeSelectionToMap(selectedSlots.value)
-  slotMapText.value = mapText
-  invertedSlotMapText.value = invertBinaryMap(mapText)
+  slotMapText.value = serializeSelectionToMappedMap(selectedSlots.value, slotValueMapping.value)
+  invertedSlotMapText.value = serializeSelectionToMappedMap(selectedSlots.value, slotValueMapping.value, true)
   humanReadableMapText.value = serializeSelectionToRanges(selectedSlots.value)
+  verticalListText.value = serializeSelectionToSmlList(selectedSlots.value, slotValueMapping.value)
+  invertedVerticalListText.value = serializeSelectionToSmlList(selectedSlots.value, slotValueMapping.value, true)
+}
+
+function updateMappingDigit(key: keyof SlotValueMapping, event: Event) {
+  const input = event.target as HTMLInputElement
+  const currentValue = slotValueMapping.value[key]
+  const nextValue = input.value.replace(/\D/g, '').slice(-1)
+  const otherKey: keyof SlotValueMapping = key === 'occupiedDigit' ? 'emptyDigit' : 'occupiedDigit'
+
+  if (!nextValue) {
+    input.value = currentValue
+    ElMessage.warning('映射值只能使用 0 到 9 的单个数字')
+    return
+  }
+
+  if (nextValue === slotValueMapping.value[otherKey]) {
+    input.value = currentValue
+    ElMessage.warning('有片值和空槽值不能相同')
+    return
+  }
+
+  slotValueMapping.value = { ...slotValueMapping.value, [key]: nextValue }
+  syncTextsFromSelection()
 }
 
 function applySelection(selection: SlotSelection, successMessage?: string) {
   selectedSlots.value = cloneSelection(selection)
   syncTextsFromSelection()
-  if (successMessage) {
-    ElMessage.success(successMessage)
-  }
+  if (successMessage) ElMessage.success(successMessage)
 }
 
 function toggleSlot(index: number) {
@@ -286,7 +342,7 @@ function clearSlots() {
 
 function applySlotMapText() {
   try {
-    applySelection(parseMapText(slotMapText.value), '已从 25 位 map 还原槽位')
+    applySelection(parseMappedMapText(slotMapText.value, slotValueMapping.value), '已从 25 位 map 还原槽位')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '25 位 map 解析失败')
   }
@@ -294,8 +350,10 @@ function applySlotMapText() {
 
 function applyInvertedSlotMapText() {
   try {
-    const invertedSelection = parseMapText(invertedSlotMapText.value).map(slot => !slot)
-    applySelection(invertedSelection, '已从 25 位反相 map 还原槽位')
+    applySelection(
+      parseMappedMapText(invertedSlotMapText.value, slotValueMapping.value, true),
+      '已从 25 位反相 map 还原槽位'
+    )
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '25 位反相 map 解析失败')
   }
@@ -306,6 +364,16 @@ function applyHumanReadableMapText() {
     applySelection(parseHumanReadableMap(humanReadableMapText.value), '已从区间 map 还原槽位')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '区间 map 解析失败')
+  }
+}
+
+function applyVerticalListText(inverted: boolean) {
+  const inputText = inverted ? invertedVerticalListText.value : verticalListText.value
+  try {
+    const result = parseSlotSmlList(inputText, slotValueMapping.value, inverted)
+    applySelection(result.selection, inverted ? '已从反相 List 还原槽位' : '已从纵向 List 还原槽位')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '纵向 List 解析失败')
   }
 }
 
@@ -323,31 +391,135 @@ async function copyText(text: string, label: string) {
   }
 }
 
-onMounted(() => {
-  syncTextsFromSelection()
-})
+onMounted(syncTextsFromSelection)
 </script>
 
 <style scoped>
+.slot-map-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.slot-map-card,
+.output-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.slot-map-card {
+  padding: 14px 16px 16px;
+}
+
+.slot-map-card__top,
+.slot-map-card__actions,
+.action-buttons,
+.mapping-fields,
+.mapping-fields label,
+.slot-summary {
+  display: flex;
+  align-items: center;
+}
+
+.slot-map-card__top,
+.slot-map-card__actions {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.slot-map-card h2 {
+  margin: 0;
+  color: #1e293b;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.slot-map-card p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mapping-fields {
+  gap: 12px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.mapping-fields__label {
+  color: #64748b;
+}
+
+.mapping-fields label {
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.mapping-fields input {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  outline: none;
+  color: #0f172a;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-weight: 600;
+  text-align: center;
+}
+
+.mapping-fields input:focus-visible {
+  border-color: #0891b2;
+  box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.12);
+}
+
+.slot-map-card__actions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.slot-summary,
+.action-buttons {
+  gap: 8px;
+}
+
+.slot-summary {
+  min-width: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.slot-summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .slot-scroll {
+  margin-top: 12px;
   overflow-x: auto;
-  padding-bottom: 0.25rem;
+  padding-bottom: 2px;
 }
 
 .slot-row {
   display: inline-flex;
-  gap: 0.5rem;
   min-width: max-content;
+  gap: 7px;
 }
 
 .slot-button {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.625rem;
+  width: 38px;
+  height: 36px;
   border: 1px solid #cbd5e1;
-  font-size: 0.875rem;
+  border-radius: 6px;
+  font-size: 13px;
   line-height: 1;
-  transition: all 0.2s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
 .slot-button--inactive {
@@ -356,24 +528,148 @@ onMounted(() => {
 }
 
 .slot-button--inactive:hover {
-  border-color: #22d3ee;
-  color: #0f766e;
-  background: #ecfeff;
+  border-color: #0891b2;
+  color: #0e7490;
 }
 
 .slot-button--active {
-  background: linear-gradient(135deg, #06b6d4, #0891b2);
   border-color: #0891b2;
+  background: #0891b2;
   color: #ffffff;
-  box-shadow: 0 8px 18px rgba(8, 145, 178, 0.18);
 }
 
-.slot-button--active:hover {
-  filter: brightness(1.03);
+.outputs-grid {
+  min-height: 610px;
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 3fr) minmax(0, 3fr);
+  gap: 12px;
+}
+
+.compact-stack {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.output-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.output-card header {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px 7px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.output-card header > div {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.output-card header small {
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.output-card__body {
+  min-height: 0;
+  flex: 1;
+  padding: 10px;
+}
+
+.compact-card .output-card__body {
+  display: flex;
+}
+
+.map-textarea {
+  width: 100%;
 }
 
 .map-textarea :deep(.el-textarea__inner) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.list-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.list-textarea {
+  min-height: 0;
+  flex: 1;
+}
+
+.list-textarea :deep(.el-textarea__inner) {
+  height: 100%;
+  min-height: 0 !important;
+}
+
+.list-card__body p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+@media (max-width: 1279px) {
+  .outputs-grid {
+    min-height: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .compact-stack {
+    grid-template-rows: none;
+  }
+
+  .list-card {
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 767px) {
+  .slot-map-card__top,
+  .slot-map-card__actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mapping-fields,
+  .action-buttons {
+    flex-wrap: wrap;
+  }
+
+  .slot-summary {
+    width: 100%;
+  }
+
+  .output-card header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-button {
+    transition: none;
+  }
 }
 </style>

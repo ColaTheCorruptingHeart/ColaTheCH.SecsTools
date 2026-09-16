@@ -21,6 +21,34 @@
       </div>
     </div>
 
+    <section v-if="diagnostics.length" class="svid-diagnostics" aria-label="SML 解析诊断">
+      <button
+        type="button"
+        class="svid-diagnostics__toggle"
+        :aria-expanded="diagnosticsOpen"
+        @click="diagnosticsOpen = !diagnosticsOpen"
+      >
+        <span class="svid-diagnostics__title">
+          <el-icon><WarningFilled /></el-icon>
+          {{ diagnostics.length }} 项解析诊断
+        </span>
+        <el-icon><ArrowUp v-if="diagnosticsOpen" /><ArrowDown v-else /></el-icon>
+      </button>
+      <div v-if="diagnosticsOpen" class="svid-diagnostics__list">
+        <button
+          v-for="(diagnostic, index) in diagnostics"
+          :key="`${diagnostic.code}-${diagnostic.start}-${index}`"
+          type="button"
+          class="svid-diagnostics__row"
+          :class="{ 'svid-diagnostics__row--error': diagnostic.severity === 'error' }"
+          @click="focusDiagnostic(diagnostic)"
+        >
+          <span>{{ diagnostic.line }}:{{ diagnostic.column }}</span>
+          <span>{{ diagnostic.message }}</span>
+        </button>
+      </div>
+    </section>
+
     <div class="flex-1 grid grid-cols-1 xl:grid-cols-2 gap-4 min-h-0">
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
         <div class="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-2">
@@ -71,8 +99,9 @@
 
 <script setup lang="ts">
 import { ElInput, ElMessage, ElMessageBox } from 'element-plus'
-import { Document } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Document, WarningFilled } from '@element-plus/icons-vue'
 import { h, nextTick, ref } from 'vue'
+import type { SmlDiagnostic } from './secsSml'
 
 interface SvidRow {
   index: number
@@ -85,6 +114,8 @@ interface SvidRow {
 const sourceTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const deviceId = ref('')
 const rows = ref<SvidRow[]>([])
+const diagnostics = ref<SmlDiagnostic[]>([])
+const diagnosticsOpen = ref(true)
 const loading = ref(false)
 const loadingText = '正在解析 S1F12 报文，请稍候...'
 
@@ -105,7 +136,7 @@ const columnWeights = {
 } as const
 
 type ExtractWorkerMessage =
-  | { type: 'success'; rows: SvidRow[] }
+  | { type: 'success'; rows: SvidRow[]; warnings?: string[]; diagnostics: SmlDiagnostic[] }
   | { type: 'error'; message: string }
 
 function createTextCell(className: string) {
@@ -173,7 +204,7 @@ function buildColumns(containerWidth: number) {
 }
 
 function runExtractWorker(text: string) {
-  return new Promise<SvidRow[]>((resolve, reject) => {
+  return new Promise<{ rows: SvidRow[]; warnings: string[]; diagnostics: SmlDiagnostic[] }>((resolve, reject) => {
     const worker = new Worker(new URL('./s1f12SvidExtractor.worker.ts', import.meta.url), { type: 'module' })
 
     const cleanup = () => {
@@ -186,7 +217,11 @@ function runExtractWorker(text: string) {
       cleanup()
 
       if (event.data.type === 'success') {
-        resolve(event.data.rows)
+        resolve({
+          rows: event.data.rows,
+          warnings: event.data.warnings || [],
+          diagnostics: event.data.diagnostics
+        })
         return
       }
 
@@ -218,11 +253,17 @@ async function handleExtract() {
 
   loading.value = true
   rows.value = []
+  diagnostics.value = []
 
   try {
     await nextTick()
-    const extractedRows = await runExtractWorker(sourceText)
-    rows.value = extractedRows
+    const extracted = await runExtractWorker(sourceText)
+    rows.value = extracted.rows
+    diagnostics.value = extracted.diagnostics
+    diagnosticsOpen.value = extracted.diagnostics.length > 0
+    if (extracted.warnings.length) {
+      ElMessage.warning(extracted.warnings[0] || '报文存在可恢复的解析警告')
+    }
 
     if (!rows.value.length) {
       ElMessage.warning('未在 [0][i][0..2] 位置提取到有效数据，请确认报文结构')
@@ -232,10 +273,24 @@ async function handleExtract() {
     ElMessage.success(`提取完成，共 ${rows.value.length} 条`)
   } catch (error) {
     rows.value = []
+    diagnostics.value = []
     ElMessage.error(error instanceof Error ? error.message : '解析失败，请检查报文格式')
   } finally {
     loading.value = false
   }
+}
+
+async function focusDiagnostic(diagnostic: SmlDiagnostic) {
+  const textarea = sourceTextareaRef.value
+  if (!textarea) return
+  await nextTick()
+  textarea.focus()
+  textarea.setSelectionRange(
+    Math.min(diagnostic.start, textarea.value.length),
+    Math.min(Math.max(diagnostic.start + 1, diagnostic.end), textarea.value.length)
+  )
+  const lineHeight = Number.parseFloat(window.getComputedStyle(textarea).lineHeight) || 22
+  textarea.scrollTop = Math.max(0, (diagnostic.line - 3) * lineHeight)
 }
 
 function escapeCsvCell(value: string) {
@@ -304,6 +359,7 @@ function clearAll() {
   }
   deviceId.value = ''
   rows.value = []
+  diagnostics.value = []
 }
 </script>
 
@@ -325,6 +381,68 @@ function clearAll() {
   cursor: not-allowed;
   color: rgb(100 116 139);
   background-color: rgb(248 250 252 / 0.7);
+}
+
+.svid-diagnostics {
+  overflow: hidden;
+  border: 1px solid rgb(253 230 138);
+  border-radius: 6px;
+  background: rgb(255 251 235);
+}
+
+.svid-diagnostics__toggle {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  padding: 7px 12px;
+  color: rgb(161 98 7);
+  cursor: pointer;
+}
+
+.svid-diagnostics__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.svid-diagnostics__list {
+  max-height: 116px;
+  overflow: auto;
+  border-top: 1px solid rgb(253 230 138);
+  background: rgb(255 255 255);
+}
+
+.svid-diagnostics__row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid rgb(241 245 249);
+  border-left: 3px solid rgb(217 119 6);
+  background: transparent;
+  padding: 6px 10px;
+  color: rgb(71 85 105);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.svid-diagnostics__row--error {
+  border-left-color: rgb(220 38 38);
+}
+
+.svid-diagnostics__row:hover,
+.svid-diagnostics__row:focus-visible {
+  background: rgb(248 250 252);
+  outline: none;
 }
 
 .svid-virtual-table :deep(.el-table-v2__header-cell),

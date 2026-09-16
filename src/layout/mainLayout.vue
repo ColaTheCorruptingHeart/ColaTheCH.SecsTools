@@ -10,12 +10,15 @@
         </div>
         <div v-if="!isCollapse" class="ml-3 flex shrink-0 items-start gap-1.5 whitespace-nowrap">
           <span class="font-bold text-slate-800 text-base tracking-wide leading-5">SECS Tools</span>
-          <span
+          <button
+            type="button"
             class="-mt-1 inline-flex rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] leading-none text-slate-500"
-            title="当前版本"
+            title="查看版本更新"
+            aria-label="查看版本更新"
+            @click="releaseNotesDialog?.open()"
           >
             {{ appVersion }}
-          </span>
+          </button>
         </div>
       </div>
 
@@ -126,6 +129,7 @@
           </transition>
         </router-view>
       </el-main>
+      <ReleaseNotesDialog ref="releaseNotesDialog" />
     </el-container>
   </el-container>
 </template>
@@ -137,10 +141,12 @@ import { Search, HomeFilled } from '@element-plus/icons-vue'
 import * as Icons from '@element-plus/icons-vue'
 import { toolsConfig, flatTools } from '../config/tools'
 import { appVersion } from '../config/appVersion'
+import ReleaseNotesDialog from '../components/ReleaseNotesDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const isCollapse = ref(false)
+const releaseNotesDialog = ref<{ open: () => void } | null>(null)
 
 const searchQuery = ref('')
 const isSearchFocused = ref(false)
@@ -162,7 +168,7 @@ const searchResults = computed(() => {
   const query = searchQuery.value.toLowerCase()
   return flatTools.filter(t =>
     t.name.toLowerCase().includes(query) ||
-    ((t as any).description && (t as any).description.toLowerCase().includes(query))
+    t.desc.toLowerCase().includes(query)
   )
 })
 

@@ -1,11 +1,11 @@
 <template>
   <el-dialog
     v-model="visibleModel"
-    title="导出标记区间"
+    :title="title"
     width="min(520px, calc(100vw - 32px))"
     destroy-on-close
   >
-    <el-form label-position="top" class="range-export-form" @submit.prevent="confirmExport">
+    <el-form label-position="top" class="export-file-name-form" @submit.prevent="confirmExport">
       <el-form-item label="机台号">
         <el-select
           v-model="machineId"
@@ -35,12 +35,12 @@
       </el-form-item>
 
       <el-form-item label="批次号">
-        <el-input v-model="batchId" clearable :placeholder="`可选，留空时使用 ${lineRange}`" />
+        <el-input v-model="batchId" clearable :placeholder="`可选，留空时使用 ${fallbackSegment}`" />
       </el-form-item>
 
       <div class="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
         <el-form-item label="日志日期">
-          <el-input :model-value="logDate" readonly />
+          <el-input :model-value="logDate || 'unknown-date'" readonly />
         </el-form-item>
 
         <el-form-item label="内容哈希">
@@ -60,7 +60,7 @@
 
     <template #footer>
       <el-button @click="visibleModel = false">取消</el-button>
-      <el-button type="primary" @click="confirmExport">导出日志</el-button>
+      <el-button type="primary" @click="confirmExport">{{ confirmLabel }}</el-button>
     </template>
   </el-dialog>
 </template>
@@ -68,16 +68,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
-import { buildRangeExportFileName } from '../rangeExport'
+import { buildStructuredExportFileName } from '../rangeExport'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
+  title: string
   machineOptions: string[]
-  startLine: number
-  endLine: number
+  fallbackSegment: string
   logDate: string
   contentHash: string
-}>()
+  extension: string
+  confirmLabel?: string
+}>(), {
+  confirmLabel: '导出'
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
@@ -93,14 +97,13 @@ const visibleModel = computed({
   set: (value: boolean) => emit('update:modelValue', value)
 })
 
-const lineRange = computed(() => `L${props.startLine}-L${props.endLine}`)
-const fileNamePreview = computed(() => buildRangeExportFileName({
+const fileNamePreview = computed(() => buildStructuredExportFileName({
   machineId: machineId.value,
   batchId: batchId.value,
-  startLine: props.startLine,
-  endLine: props.endLine,
+  fallbackSegment: props.fallbackSegment,
   logDate: props.logDate,
-  contentHash: props.contentHash
+  contentHash: props.contentHash,
+  extension: props.extension
 }))
 
 watch(
@@ -130,7 +133,7 @@ const confirmExport = () => {
 </script>
 
 <style scoped>
-.range-export-form :deep(.el-form-item__label) {
+.export-file-name-form :deep(.el-form-item__label) {
   color: #475569;
   font-size: 13px;
   line-height: 20px;

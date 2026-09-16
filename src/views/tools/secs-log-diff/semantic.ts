@@ -1,4 +1,5 @@
 ﻿import { parseSmlTree, type SecsSmlNode } from '../secs-log/sml'
+import { formatSmlDiagnostic, summarizeSmlDiagnostics, type ParsedSecsSmlTree } from '../secs-log/sml'
 import { evaluateAck } from './ack'
 import {
   cleanSecsValue,
@@ -35,6 +36,18 @@ function createParseErrorEvent(message: SecsLogMessage, parseError: string, rule
     ruleSeverity: rule?.severity,
     diffMode: rule?.mode || 'presence'
   }
+}
+
+function getSmlParseError(parsed: ParsedSecsSmlTree) {
+  if (summarizeSmlDiagnostics(parsed).isUsable) return ''
+  const errors = parsed.diagnostics.filter(diagnostic => diagnostic.severity === 'error')
+  return errors.map(formatSmlDiagnostic).join('；') || '未识别到可用的 SML 数据节点'
+}
+
+function getSmlParseWarnings(parsed: ParsedSecsSmlTree) {
+  return parsed.diagnostics
+    .filter(diagnostic => diagnostic.severity === 'warning')
+    .map(formatSmlDiagnostic)
 }
 
 function getEventType(message: SecsLogMessage, rule: MessageDiffRule): SecsLogEventType {
@@ -303,6 +316,8 @@ export function buildSemanticEvent(message: SecsLogMessage, profile: SecsLogDiff
   if (activeRule.mode === 'key-only') {
     try {
       const parsed = parseSmlTree(message.rawText)
+      const parseError = getSmlParseError(parsed)
+      if (parseError) return createParseErrorEvent(message, parseError, activeRule)
       const attributes: Record<string, string> = {}
       addKeyPathAttributes(attributes, parsed.roots, activeRule)
 
@@ -328,6 +343,7 @@ export function buildSemanticEvent(message: SecsLogMessage, profile: SecsLogDiff
         summary: makeSummary(message, activeRule, cleanedAttributes),
         attributes: cleanedAttributes,
         rawText: message.rawText,
+        parseWarnings: getSmlParseWarnings(parsed),
         ruleId: activeRule.id,
         ruleSeverity: activeRule.severity,
         diffMode: activeRule.mode
@@ -339,6 +355,8 @@ export function buildSemanticEvent(message: SecsLogMessage, profile: SecsLogDiff
 
   try {
     const parsed = parseSmlTree(message.rawText)
+    const parseError = getSmlParseError(parsed)
+    if (parseError) return createParseErrorEvent(message, parseError, activeRule)
     const attributes: Record<string, string> = {}
     addExtractorAttributes(attributes, parsed.roots, activeRule)
     addPathAttributes(attributes, parsed.roots, activeRule)
@@ -365,6 +383,7 @@ export function buildSemanticEvent(message: SecsLogMessage, profile: SecsLogDiff
         Object.entries(attributes).map(([key, value]) => [key, cleanSecsValue(value)])
       ),
       rawText: message.rawText,
+      parseWarnings: getSmlParseWarnings(parsed),
       ruleId: activeRule.id,
       ruleSeverity: activeRule.severity,
       diffMode: activeRule.mode,

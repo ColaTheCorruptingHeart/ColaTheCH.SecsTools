@@ -34,7 +34,7 @@ SECS Tools 是一个纯粹的 Vibe Coding 项目，它是一个面向半导体�
 - S1F12 SVID 提取：提取 SVID、SVNAME、UNITS 信息。
 - S1F3 生成器：按指定格式生成 S1F3 W 命令。
 - S1F4 解析：按 SVNAME 映射顺序对返回值进行对齐展示。
-- Slot 转换工具：在槽位选择、位图、区间表达式之间互转。
+- Slot 转换工具：在槽位选择、自定义数字映射、位图、纵向 U1 List、反相结果与区间表达式之间互转。
 - RecipeBody 分析器：统一解析 PPBODY、Hex、字节数组与文件输入，并支持只读分析与无损导出。
 
 ### 日志分析
@@ -91,6 +91,15 @@ npm run build
 npm run lint
 ```
 
+### 自动化测试
+
+```bash
+npm test
+npm run test:e2e
+```
+
+SML 方言、诊断契约和扩展说明见 [SML 解析支持矩阵](docs/sml-parser.md)。
+
 ## 可用脚本
 
 | 脚本 | 说明 |
@@ -101,6 +110,9 @@ npm run lint
 | `npm run type-check` | 执行 Vue + TypeScript 类型检查 |
 | `npm run lint` | 运行全部 lint 流程 |
 | `npm run preview` | 预览构建产物 |
+| `npm test` | 运行 Vitest 单元与集成测试 |
+| `npm run test:watch` | 监听文件并运行相关 Vitest 测试 |
+| `npm run test:e2e` | 运行 Playwright 浏览器测试 |
 
 ## 目录结构
 
