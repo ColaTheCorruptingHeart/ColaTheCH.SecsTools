@@ -98,6 +98,10 @@ function isListType(typeName: string) {
   return /^(?:L|LIST)$/i.test(typeName)
 }
 
+function isCharacterType(typeName: string) {
+  return /^(?:A|ASCII|J|JIS8)$/i.test(typeName)
+}
+
 interface ParserContext {
   input: string
   lineStarts: number[]
@@ -177,7 +181,31 @@ function addDiagnostic(
 }
 
 function normalizeBody(body: string) {
-  const cleaned = body.replace(/\s+/g, ' ').trim()
+  let cleaned = ''
+  let quote = ''
+  let pendingSpace = false
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index] || ''
+    if (quote) {
+      cleaned += char
+      if (char === '\\' && index + 1 < body.length) cleaned += body[++index]
+      else if (char === quote) quote = ''
+      continue
+    }
+    if (char === "'" || char === '"') {
+      if (pendingSpace && cleaned) cleaned += ' '
+      pendingSpace = false
+      quote = char
+      cleaned += char
+    } else if (/\s/.test(char)) {
+      pendingSpace = true
+    } else {
+      if (pendingSpace && cleaned) cleaned += ' '
+      pendingSpace = false
+      cleaned += char
+    }
+  }
+  cleaned = cleaned.trim()
   const typeMatch = cleaned.match(/^([A-Za-z][A-Za-z0-9]*)/)
   if (!typeMatch?.[1]) {
     return { typeName: cleaned, value: '', declaredCount: undefined, label: undefined }
@@ -251,7 +279,10 @@ export function normalizeOpenLine(line: string) {
   const hasClose = trimmed.endsWith('>')
   const inner = trimmed.slice(1, hasClose ? -1 : undefined).trim()
   const parsed = normalizeBody(inner)
-  return `<${parsed.typeName || inner}${parsed.value ? ` ${parsed.value}` : ''}${hasClose ? '>' : ''}`
+  const scalarCount = parsed.declaredCount !== undefined && isCharacterType(parsed.typeName)
+    ? ` [${parsed.declaredCount}]`
+    : ''
+  return `<${parsed.typeName || inner}${scalarCount}${parsed.value ? ` ${parsed.value}` : ''}${hasClose ? '>' : ''}`
 }
 
 function readTypeAt(input: string, start: number) {
@@ -350,7 +381,7 @@ function buildNode(context: ParserContext, start: number, depth = 0): { node: Se
   const startPosition = getPosition(context.lineStarts, start)
   const endPosition = getPosition(context.lineStarts, Math.max(start, initialEnd - 1))
   const node: SecsSmlNode = {
-    text: `<${typeName}${parsed.value ? ` ${parsed.value}` : ''}${childStart === -1 && openingTagEnd !== -1 ? '>' : ''}`,
+    text: `<${typeName}${parsed.declaredCount !== undefined && isCharacterType(typeName) ? ` [${parsed.declaredCount}]` : ''}${parsed.value ? ` ${parsed.value}` : ''}${childStart === -1 && openingTagEnd !== -1 ? '>' : ''}`,
     children: [],
     kind: isList ? 'list' : 'value',
     typeName,

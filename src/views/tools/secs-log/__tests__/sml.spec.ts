@@ -120,6 +120,13 @@ describe('SECS SML parser', () => {
     expect(ceidLine).toMatchObject({ clickable: true, path: '[0][1]' })
   })
 
+  it('preserves character lengths and whitespace inside quoted values', () => {
+    const result = formatSecsSml(`S1F1\n<A [5] "OK   ">.`)
+
+    expect(result.diagnostics).toEqual([])
+    expect(result.text).toBe(`S1F1\n<A [5] "OK   ">.`)
+  })
+
   it('supports bracket counts, brace labels, long type names, comments and semicolon terminators', () => {
     const source = `S01F012 W
 <LIST [2] {SV_LIST}

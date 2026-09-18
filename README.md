@@ -30,6 +30,7 @@ SECS Tools 是一个纯粹的 Vibe Coding 项目，它是一个面向半导体�
 
 ### SECS 报文工具
 
+- SML 构造器：直接编辑 SML 节点、数据类型与层级，支持模板、结构校验和可配置引号策略。
 - SECS SML 格式化：将原始报文整理为更易读的层级结构。
 - S1F12 SVID 提取：提取 SVID、SVNAME、UNITS 信息。
 - S1F3 生成器：按指定格式生成 S1F3 W 命令。

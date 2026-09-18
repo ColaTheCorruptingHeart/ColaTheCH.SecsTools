@@ -66,6 +66,15 @@ export const toolsConfig: ToolCategory[] = [
     icon: 'Document',
     tools: [
       {
+        id: 'sml-builder',
+        name: 'SML 构造器',
+        desc: '通过参数表和结构树创建复杂 SML，自动维护 List 数量并实时校验。',
+        path: '/tools/sml-builder',
+        icon: 'SetUp',
+        color: '#087f8c',
+        componentPath: 'SmlBuilder'
+      },
+      {
         id: 'secs-sml',
         name: 'SECS SML 格式化',
         desc: '粘贴原始报文日志，自动输出简洁层级格式，支持层级路径点选。',
